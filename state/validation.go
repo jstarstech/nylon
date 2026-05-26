@@ -187,5 +187,20 @@ func CentralConfigValidator(cfg *CentralCfg) error {
 			}
 		}
 	}
+	// validate routing policies
+	for i, pol := range cfg.RoutingPolicies {
+		if !pol.Src.IsValid() {
+			return fmt.Errorf("routing_policy[%d]: invalid src prefix %s", i, pol.Src)
+		}
+		if pol.Dst.IsValid() && !pol.Dst.IsValid() {
+			return fmt.Errorf("routing_policy[%d]: invalid dst prefix %s", i, pol.Dst)
+		}
+		if err := NameValidator(string(pol.Via)); err != nil {
+			return fmt.Errorf("routing_policy[%d]: invalid via node %s: %v", i, pol.Via, err)
+		}
+		if !cfg.IsRouter(pol.Via) {
+			return fmt.Errorf("routing_policy[%d]: via node %s is not a router in central config", i, pol.Via)
+		}
+	}
 	return nil
 }

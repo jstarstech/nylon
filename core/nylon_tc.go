@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net/netip"
 
@@ -8,8 +9,46 @@ import (
 	"github.com/encodeous/nylon/polyamide/device"
 	"github.com/encodeous/nylon/protocol"
 	"github.com/encodeous/nylon/state"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 	"google.golang.org/protobuf/proto"
 )
+
+func checksum(data []byte) uint16 {
+	var csum uint32
+	for i := 0; i < len(data)-1; i += 2 {
+		csum += uint32(binary.BigEndian.Uint16(data[i : i+2]))
+	}
+	if len(data)%2 == 1 {
+		csum += uint32(data[len(data)-1]) << 8
+	}
+	csum = (csum >> 16) + (csum & 0xffff)
+	csum = (csum >> 16) + (csum & 0xffff)
+	return ^uint16(csum)
+}
+
+func icmpv6Checksum(msg []byte, src, dst netip.Addr) uint16 {
+	var csum uint32
+	src16 := src.As16()
+	dst16 := dst.As16()
+	for i := 0; i < 16; i += 2 {
+		csum += uint32(binary.BigEndian.Uint16(src16[i : i+2]))
+	}
+	for i := 0; i < 16; i += 2 {
+		csum += uint32(binary.BigEndian.Uint16(dst16[i : i+2]))
+	}
+	csum += uint32(len(msg))
+	csum += 58
+	for i := 0; i < len(msg)-1; i += 2 {
+		csum += uint32(binary.BigEndian.Uint16(msg[i : i+2]))
+	}
+	if len(msg)%2 == 1 {
+		csum += uint32(msg[len(msg)-1]) << 8
+	}
+	csum = (csum >> 16) + (csum & 0xffff)
+	csum = (csum >> 16) + (csum & 0xffff)
+	return ^uint16(csum)
+}
 
 const (
 	NyProtoId = 8
@@ -40,6 +79,32 @@ func (n *Nylon) InstallTC() {
 			return device.TcPass, nil
 		})
 	}
+
+	// policy route filter: match incoming packets from passive clients against routing policies
+	n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+		if !packet.Incoming() || !packet.Validate() {
+			return device.TcPass, nil
+		}
+		src := packet.GetSrc()
+		dst := packet.GetDst()
+		if !src.IsValid() || !dst.IsValid() {
+			return device.TcPass, nil
+		}
+		pr := n.PolicyRoutes.Load()
+		if pr == nil {
+			return device.TcPass, nil
+		}
+		for _, pol := range *pr {
+			if pol.Src.Contains(src) && pol.Dst.Contains(dst) {
+				packet.ToPeer = pol.Peer
+				if n.DBG_trace_tc {
+					t.Submit(fmt.Sprintf("PolicyFwd: %v -> %v via policy route\n", src, dst))
+				}
+				return device.TcForward, nil
+			}
+		}
+		return device.TcPass, nil
+	})
 
 	// bounce back packets if using system routing
 	if n.UseSystemRouting {
@@ -82,26 +147,33 @@ func (n *Nylon) InstallTC() {
 			}
 			return device.TcPass, nil
 		})
-
-		// handle TTL
-		n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
-			if packet.Incoming() && (packet.GetIPVersion() == 4 || packet.GetIPVersion() == 6) {
-				// allow traceroute to figure out the route
-				ttl := packet.GetTTL()
-				if ttl >= 1 {
-					ttl--
-					packet.DecrementTTL()
-				}
-				if ttl == 0 {
-					if n.DBG_trace_tc {
-						t.Submit(fmt.Sprintf("TTL Expired: %v -> %v\n", packet.GetSrc(), packet.GetDst()))
-					}
-					return device.TcBounce, nil
-				}
-			}
-			return device.TcPass, nil
-		})
 	}
+
+	// override policy route filter: runs before ForwardTable, after TTL
+	n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+		if !packet.Incoming() || !packet.Validate() {
+			return device.TcPass, nil
+		}
+		src := packet.GetSrc()
+		dst := packet.GetDst()
+		if !src.IsValid() || !dst.IsValid() {
+			return device.TcPass, nil
+		}
+		pr := n.OverridePolicyRoutes.Load()
+		if pr == nil {
+			return device.TcPass, nil
+		}
+		for _, pol := range *pr {
+			if pol.Src.Contains(src) && pol.Dst.Contains(dst) {
+				packet.ToPeer = pol.Peer
+				if n.DBG_trace_tc {
+					t.Submit(fmt.Sprintf("PolicyFwd(override): %v -> %v\n", src, dst))
+				}
+				return device.TcForward, nil
+			}
+		}
+		return device.TcPass, nil
+	})
 
 	// handle passive client traffic separately
 
@@ -125,6 +197,114 @@ func (n *Nylon) InstallTC() {
 		if packet.Incoming() && packet.GetIPVersion() == NyProtoId {
 			n.handleNylonPacket(packet.Payload(), packet.FromEp, packet.FromPeer)
 			return device.TcDrop, nil
+		}
+		return device.TcPass, nil
+	})
+
+	// TTL handler: installed last so it runs FIRST (slices.Backward)
+	// Must always be the last installed filter.
+	n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+		if n.LocalCfg.DisableTTL {
+			return device.TcPass, nil
+		}
+		if !packet.Incoming() || !packet.Validate() {
+			return device.TcPass, nil
+		}
+		ver := packet.GetIPVersion()
+		if ver != 4 && ver != 6 {
+			return device.TcPass, nil
+		}
+		ttl := packet.GetTTL()
+		if ttl >= 1 {
+			ttl--
+			packet.DecrementTTL()
+		}
+		if ttl == 0 && packet.FromPeer != nil {
+			n.Log.Debug("icmp ttl exceeded", "src", packet.GetSrc(), "dst", packet.GetDst())
+			if n.DBG_trace_tc {
+				t.Submit(fmt.Sprintf("TTL Expired: %v -> %v\n", packet.GetSrc(), packet.GetDst()))
+			}
+
+			var localSrc netip.Addr
+			for _, addr := range n.GetRouter(n.LocalCfg.Id).Addresses {
+				if ver == 4 && addr.Is4() {
+					localSrc = addr
+					break
+				}
+				if ver == 6 && addr.Is6() {
+					localSrc = addr
+					break
+				}
+			}
+			if !localSrc.IsValid() {
+				return device.TcDrop, nil
+			}
+
+			origSrc := packet.GetSrc()
+			origPayload := packet.Payload()
+
+			if ver == 4 {
+				icmpBodyLen := ipv4.HeaderLen + 8
+				if len(origPayload) < 8 {
+					icmpBodyLen = ipv4.HeaderLen + len(origPayload)
+				}
+				newTotalLen := ipv4.HeaderLen + 8 + icmpBodyLen
+				packet.Packet = packet.Packet[:newTotalLen]
+
+				icmpHdrOff := ipv4.HeaderLen
+				icmpBodyOff := icmpHdrOff + 8
+				copy(packet.Packet[icmpBodyOff:], packet.Packet[:ipv4.HeaderLen])
+				copy(packet.Packet[icmpBodyOff+ipv4.HeaderLen:], origPayload[:icmpBodyLen-ipv4.HeaderLen])
+
+				icmpHdr := packet.Packet[icmpHdrOff : icmpHdrOff+8]
+				icmpHdr[0] = 11
+				icmpHdr[1] = 0
+				binary.BigEndian.PutUint16(icmpHdr[2:4], 0)
+				binary.BigEndian.PutUint32(icmpHdr[4:8], 0)
+				csum := checksum(packet.Packet[icmpHdrOff : icmpHdrOff+8+icmpBodyLen])
+				binary.BigEndian.PutUint16(icmpHdr[2:4], csum)
+
+				packet.SetSrc(localSrc)
+				packet.SetDst(origSrc)
+				packet.Packet[8] = 64
+				packet.Packet[9] = 1
+				binary.BigEndian.PutUint16(packet.Packet[2:4], uint16(newTotalLen))
+				binary.BigEndian.PutUint16(packet.Packet[10:12], 0)
+				binary.BigEndian.PutUint16(packet.Packet[10:12], checksum(packet.Packet[:ipv4.HeaderLen]))
+				packet.SetLength(uint16(newTotalLen))
+			} else {
+				icmpBodyLen := ipv6.HeaderLen + 8
+				if len(origPayload) < 8 {
+					icmpBodyLen = ipv6.HeaderLen + len(origPayload)
+				}
+				newTotalLen := ipv6.HeaderLen + 8 + icmpBodyLen
+				packet.Packet = packet.Packet[:newTotalLen]
+
+				icmpHdrOff := ipv6.HeaderLen
+				icmpBodyOff := icmpHdrOff + 8
+				copy(packet.Packet[icmpBodyOff:], packet.Packet[:ipv6.HeaderLen])
+				copy(packet.Packet[icmpBodyOff+ipv6.HeaderLen:], origPayload[:icmpBodyLen-ipv6.HeaderLen])
+
+				icmpHdr := packet.Packet[icmpHdrOff : icmpHdrOff+8]
+				icmpHdr[0] = 3
+				icmpHdr[1] = 0
+				binary.BigEndian.PutUint16(icmpHdr[2:4], 0)
+				binary.BigEndian.PutUint32(icmpHdr[4:8], 0)
+
+				icmpMsg := packet.Packet[icmpHdrOff : icmpHdrOff+8+icmpBodyLen]
+				csum := icmpv6Checksum(icmpMsg, localSrc, origSrc)
+				binary.BigEndian.PutUint16(icmpHdr[2:4], csum)
+
+				packet.SetSrc(localSrc)
+				packet.SetDst(origSrc)
+				packet.Packet[7] = 255
+				packet.Packet[6] = 58
+				binary.BigEndian.PutUint16(packet.Packet[4:6], uint16(8+icmpBodyLen))
+				packet.SetLength(uint16(newTotalLen))
+			}
+
+			packet.ToPeer = packet.FromPeer
+			return device.TcForward, nil
 		}
 		return device.TcPass, nil
 	})

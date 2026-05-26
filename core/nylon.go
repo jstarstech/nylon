@@ -26,6 +26,12 @@ import (
 	slogmulti "github.com/samber/slog-multi"
 )
 
+type PolicyRouteEntry struct {
+	Src  netip.Prefix
+	Dst  netip.Prefix
+	Peer *device.Peer
+}
+
 type Nylon struct {
 	Trace *NylonTrace
 
@@ -35,10 +41,12 @@ type Nylon struct {
 
 	// state
 	state.ConfigState
-	RouterState   *state.RouterState
-	AppliedSystem AppliedSystemState
-	PingBuf       *ttlcache.Cache[uint64, EpPing]
-	PeerMap       atomic.Pointer[map[state.NyPublicKey]state.NodeId]
+	RouterState      *state.RouterState
+	AppliedSystem    AppliedSystemState
+	PingBuf          *ttlcache.Cache[uint64, EpPing]
+	PeerMap          atomic.Pointer[map[state.NyPublicKey]state.NodeId]
+	PolicyRoutes         atomic.Pointer[[]PolicyRouteEntry]
+	OverridePolicyRoutes atomic.Pointer[[]PolicyRouteEntry]
 
 	router struct {
 		LastStarvationRequest time.Time
@@ -193,6 +201,8 @@ func (n *Nylon) Init() error {
 		return err
 	}
 
+	n.resolvePolicyRoutes()
+
 	// endpoint probing
 	n.RepeatTask(func() error {
 		return n.probeLinks(true)
@@ -307,6 +317,44 @@ endLoop:
 	}
 	n.Log.Info("stopped")
 	return nil
+}
+
+func (n *Nylon) resolvePolicyRoutes() {
+	normal := make([]PolicyRouteEntry, 0)
+	overrides := make([]PolicyRouteEntry, 0)
+	for _, pol := range n.CentralCfg.RoutingPolicies {
+		if pol.Via == n.LocalCfg.Id {
+			continue
+		}
+		if n.RouterState.GetNeighbour(pol.Via) == nil {
+			continue
+		}
+		if !pol.Src.IsValid() {
+			continue
+		}
+		dst := pol.GetDst()
+		ncfg := n.TryGetNode(pol.Via)
+		if ncfg == nil {
+			continue
+		}
+		peer := n.Device.LookupPeer(device.NoisePublicKey(ncfg.PubKey))
+		if peer == nil {
+			continue
+		}
+		entry := PolicyRouteEntry{
+			Src:  pol.Src,
+			Dst:  dst,
+			Peer: peer,
+		}
+		if pol.Override {
+			overrides = append(overrides, entry)
+		} else {
+			normal = append(normal, entry)
+		}
+	}
+	n.PolicyRoutes.Store(&normal)
+	n.OverridePolicyRoutes.Store(&overrides)
+	n.Log.Debug("resolved policy routes", "normal", len(normal), "override", len(overrides))
 }
 
 func (n *Nylon) Cleanup() error {

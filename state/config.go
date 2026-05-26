@@ -37,13 +37,28 @@ type LocalDistributionCfg struct {
 	Url string
 }
 
+type RoutingPolicy struct {
+	Src      netip.Prefix `yaml:"src"`
+	Dst      netip.Prefix `yaml:"dst,omitempty"`
+	Via      NodeId       `yaml:"via"`
+	Override bool         `yaml:"override,omitempty"`
+}
+
+func (r RoutingPolicy) GetDst() netip.Prefix {
+	if r.Dst.IsValid() {
+		return r.Dst
+	}
+	return netip.PrefixFrom(netip.IPv4Unspecified(), 0)
+}
+
 type CentralCfg struct {
-	Dist       *DistributionCfg `yaml:",omitempty"`
-	Routers    []RouterCfg
-	Clients    []ClientCfg
-	Graph      []string
-	Timestamp  int64
-	ExcludeIPs []netip.Prefix `yaml:"exclude_ips,omitempty"` // split tunnel, default excluded ip ranges for the whole network, if empty, all advertised prefixes will be included
+	Dist            *DistributionCfg `yaml:",omitempty"`
+	Routers         []RouterCfg
+	Clients         []ClientCfg
+	Graph           []string
+	Timestamp       int64
+	ExcludeIPs      []netip.Prefix   `yaml:"exclude_ips,omitempty"` // split tunnel, default excluded ip ranges for the whole network, if empty, all advertised prefixes will be included
+	RoutingPolicies []RoutingPolicy  `yaml:"routing_policy,omitempty"`
 }
 
 // LocalCfg represents local node-level configuration
@@ -54,6 +69,7 @@ type LocalCfg struct {
 	Port             uint16                // Address that the data plane can be accessed by
 	Dist             *LocalDistributionCfg `yaml:",omitempty"`                   // distribution configuration
 	UseSystemRouting bool                  `yaml:"use_system_routing,omitempty"` // all packets from peers will come out of the TUN interface
+	DisableTTL       bool                  `yaml:"disable_ttl,omitempty"`        // disable TTL decrement and ICMP Time Exceeded generation
 	NoNetConfigure   bool                  `yaml:"no_net_configure,omitempty"`   // do not configure system networking at all
 	DnsResolvers     []string              `yaml:"dns_resolvers,omitempty"`      // dns resolvers used by nylon, currently only for config repo
 	InterfaceName    string                `yaml:"interface_name,omitempty"`     // the name of the nylon interface

@@ -47,6 +47,7 @@ func (n *Nylon) ApplyCentralConfig(cfg *state.CentralCfg) (ApplyResult, error) {
 	if err := n.SyncSystemState(); err != nil {
 		return ApplyRejected, err
 	}
+	n.resolvePolicyRoutes()
 	ComputeRoutes(n.RouterState, n)
 
 	return ApplyApplied, nil

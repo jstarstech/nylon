@@ -149,6 +149,24 @@ graph:
   - Group2 = Group1, client1 # groups can contain other groups
   - client1, eve, alice      # all three fully interconnected
 
+# --- Source-Based Routing Policies ---
+# Evaluate incoming packets against policy rules before the ForwardTable.
+# Rules are tried in order; the first match wins. Override the destination-based
+# routing — useful for steering specific clients through a chosen exit node.
+#
+# Rules are active only on the node where `via` is a direct neighbour.
+# This prevents loops: the policy fires at the edge node where the client
+# first enters the mesh, then the forwarded packet follows normal ForwardTable
+# routing. Rules whose `via` equals the local node are automatically skipped.
+#
+#   - src: 10.0.0.10/32     # match on inner packet source
+#     dst: 0.0.0.0/0        # match on inner packet destination (default: 0.0.0.0/0)
+#     via: node-2           # forward to this node's WireGuard peer
+routing_policy:
+  - src: 10.0.0.10/32
+    dst: 0.0.0.0/0
+    via: node-2
+
 # Updated automatically by `nylon seal`; used as a version number for config distribution.
 timestamp: 1740832962209309000
 ```

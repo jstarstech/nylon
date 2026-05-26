@@ -57,4 +57,11 @@ graph: # The graph determines which nodes will attempt/can peer with each other.
   - Group1, Group1 # You can emulate that behaviour by connecting a group to its self
   - Group2 = Group1, client1 # You can use groups within groups
   - client1, eve, alice # Here, client1, eve and alice will all connect to each other
+routing_policy: # source-based routing policies override the destination-based ForwardTable; evaluated in order on each incoming packet, first match wins
+  - src: 10.0.0.10/32 # traffic from client1
+    dst: 0.0.0.0/0 # to any internet destination (default if omitted)
+    via: node-2 # forward through node-2
+  - src: 10.0.0.11/32 # traffic from client2
+    dst: 0.0.0.0/0
+    via: node-1 # forward through node-1
 timestamp: 1740832962209309000 # The timestamp is updated by "nylon seal" and is used as a version number when checking for config updates.
