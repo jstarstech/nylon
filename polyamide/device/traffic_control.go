@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/encodeous/nylon/polyamide/conn"
+	"github.com/encodeous/nylon/polyamide/tun"
 )
 
 // polyamide traffic control provides a facility to re-order, manipulate, and redirect packets between nylon/polyamide nodes
@@ -158,10 +159,11 @@ func (device *Device) TCBatch(batch []*TCElement, tcs *TCState) {
 	// bounce packets back to the system
 	if len(tcs.bouncePkts) > 0 {
 		for _, elem := range tcs.bouncePkts {
-			tcs.bounceBufs = append(tcs.bounceBufs, elem.Buffer[:MessageTransportHeaderSize+len(elem.Packet)])
+			buf := make([]byte, tun.VirtioNetHdrLen+len(elem.Packet))
+			copy(buf[tun.VirtioNetHdrLen:], elem.Packet)
+			tcs.bounceBufs = append(tcs.bounceBufs, buf)
 		}
-		// here, we need to use elem.Buffer instead of elem.Packet since we will get io.ErrShortBuffer if offset < 4
-		_, err := device.tun.device.Write(tcs.bounceBufs, MessageTransportHeaderSize)
+		_, err := device.tun.device.Write(tcs.bounceBufs, tun.VirtioNetHdrLen)
 		if err != nil && !device.isClosed() {
 			device.Log.Errorf("Failed to loop back packets to TUN device: %v", err)
 		}
