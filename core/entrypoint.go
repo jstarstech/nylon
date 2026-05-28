@@ -58,12 +58,16 @@ func readCentralConfig(centralPath, nodePath string, tunables *state.RouterTunab
 			return nil, fmt.Errorf("central.yaml not found and node.yaml has no dist config")
 		}
 
-		cfg, err := FetchConfig(nodeCfg.Dist.Url, nodeCfg.Dist.Key, tunables.MaxConfigSize)
+		bundle, err := FetchConfigBytes(nodeCfg.Dist.Url, tunables.MaxConfigSize)
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := state.UnbundleConfig(string(bundle), nodeCfg.Dist.Key)
 		if err != nil {
 			return nil, err
 		}
 
-		bytes, err := yaml.Marshal(cfg)
+		bytes, err := centralConfigBytes(cfg, bundle)
 		if err != nil {
 			return nil, err
 		}
@@ -76,7 +80,20 @@ func readCentralConfig(centralPath, nodePath string, tunables *state.RouterTunab
 	} else {
 		err = yaml.Unmarshal(file, &centralCfg)
 		if err != nil {
-			return nil, err
+			var nodeCfg state.LocalCfg
+			nodeFile, nodeErr := os.ReadFile(nodePath)
+			if nodeErr != nil {
+				return nil, err
+			}
+			nodeErr = yaml.Unmarshal(nodeFile, &nodeCfg)
+			if nodeErr != nil || nodeCfg.Dist == nil {
+				return nil, err
+			}
+			cfg, bundleErr := state.UnbundleConfig(string(file), nodeCfg.Dist.Key)
+			if bundleErr != nil {
+				return nil, err
+			}
+			centralCfg = *cfg
 		}
 	}
 	return &centralCfg, nil

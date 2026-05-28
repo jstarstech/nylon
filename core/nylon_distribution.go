@@ -15,8 +15,9 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// fetches and unbundles central config from url
-func FetchConfig(repoStr string, key state.NyPublicKey, maxSize int64) (*state.CentralCfg, error) {
+var PersistEncryptedCentral = "false"
+
+func FetchConfigBytes(repoStr string, maxSize int64) ([]byte, error) {
 	repo, err := url.Parse(repoStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repo URL %s: %w", repoStr, err)
@@ -66,12 +67,28 @@ func FetchConfig(repoStr string, key state.NyPublicKey, maxSize int64) (*state.C
 			return nil, fmt.Errorf("failed to close response from %s: %w", repo.String(), err)
 		}
 	}
+	return cfgBody, nil
+}
+
+// fetches and unbundles central config from url
+func FetchConfig(repoStr string, key state.NyPublicKey, maxSize int64) (*state.CentralCfg, error) {
+	cfgBody, err := FetchConfigBytes(repoStr, maxSize)
+	if err != nil {
+		return nil, err
+	}
 
 	config, err := state.UnbundleConfig(string(cfgBody), key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unbundle config from %s: %w", repoStr, err)
 	}
 	return config, nil
+}
+
+func centralConfigBytes(config *state.CentralCfg, bundle []byte) ([]byte, error) {
+	if PersistEncryptedCentral == "true" {
+		return bundle, nil
+	}
+	return yaml.Marshal(config)
 }
 
 // responsible for central config distribution
@@ -85,7 +102,11 @@ func checkForConfigUpdates(n *Nylon) error {
 	for _, repoStr := range repos {
 		go func(repo string) {
 			err := func() error {
-				config, err := FetchConfig(repo, key, n.MaxConfigSize)
+				bundle, err := FetchConfigBytes(repo, n.MaxConfigSize)
+				if err != nil {
+					return err
+				}
+				config, err := state.UnbundleConfig(string(bundle), key)
 				if err != nil {
 					return err
 				}
@@ -106,7 +127,7 @@ func checkForConfigUpdates(n *Nylon) error {
 						return nil
 					}
 					if n.ConfigPath != "" {
-						bytes, err := yaml.Marshal(config)
+						bytes, err := centralConfigBytes(config, bundle)
 						if err != nil {
 							n.Log.Error("Error marshalling new config", "err", err.Error())
 							return nil
