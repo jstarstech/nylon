@@ -15,6 +15,7 @@ import (
 type PrefixHealth interface {
 	GetMetric() uint32 // Metric does not block, and returns the advertised metric for this prefix
 	GetPrefix() netip.Prefix
+	GetTag() string
 	Start(log *slog.Logger, t *RouterTunables) // Start begins any background monitoring required for this prefix
 	Stop()
 }
@@ -22,6 +23,7 @@ type PrefixHealth interface {
 // StaticPrefixHealth represents a static prefix configuration, always advertised with the same metric
 type StaticPrefixHealth struct {
 	Prefix netip.Prefix `yaml:"prefix"`
+	Tag    string       `yaml:"tag,omitempty"`
 	Metric uint32       `yaml:"metric,omitempty"` // the metric to advertise for this prefix
 }
 
@@ -35,12 +37,16 @@ func (s *StaticPrefixHealth) GetMetric() uint32 {
 func (s *StaticPrefixHealth) GetPrefix() netip.Prefix {
 	return s.Prefix
 }
+func (s *StaticPrefixHealth) GetTag() string {
+	return NormalizeRouteTag(s.Tag)
+}
 func (s *StaticPrefixHealth) Start(log *slog.Logger, t *RouterTunables) {
 	// do nothing
 }
 
 type PingPrefixHealth struct {
 	Prefix      netip.Prefix   `yaml:"prefix"`
+	Tag         string         `yaml:"tag,omitempty"`
 	Addr        netip.Addr     `yaml:"addr"`                   // the address to ping
 	MaxFailures *int           `yaml:"max_failures,omitempty"` // number of failures before returning infinite metric
 	Delay       *time.Duration `yaml:"delay,omitempty"`        // delay between pings
@@ -85,6 +91,9 @@ func (p *PingPrefixHealth) GetMetric() uint32 {
 }
 func (p *PingPrefixHealth) GetPrefix() netip.Prefix {
 	return p.Prefix
+}
+func (p *PingPrefixHealth) GetTag() string {
+	return NormalizeRouteTag(p.Tag)
 }
 func (p *PingPrefixHealth) Start(log *slog.Logger, t *RouterTunables) {
 	if p.running.Swap(true) {
@@ -148,6 +157,7 @@ func (p *PingPrefixHealth) Start(log *slog.Logger, t *RouterTunables) {
 
 type HTTPPrefixHealth struct {
 	Prefix     netip.Prefix   `yaml:"prefix"`
+	Tag        string         `yaml:"tag,omitempty"`
 	URL        string         `yaml:"url"`              // the URL to check
 	Delay      *time.Duration `yaml:"delay,omitempty"`  // delay between probes
 	Metric     *uint32        `yaml:"metric,omitempty"` // metric override
@@ -167,6 +177,9 @@ func (h *HTTPPrefixHealth) GetMetric() uint32 {
 }
 func (h *HTTPPrefixHealth) GetPrefix() netip.Prefix {
 	return h.Prefix
+}
+func (h *HTTPPrefixHealth) GetTag() string {
+	return NormalizeRouteTag(h.Tag)
 }
 func (h *HTTPPrefixHealth) Start(log *slog.Logger, t *RouterTunables) {
 	if h.running.Swap(true) {

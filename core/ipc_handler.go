@@ -150,9 +150,10 @@ func handleStatus(n *Nylon, req *protocol.StatusRequest) *protocol.IpcResponse {
 
 func buildAdvertisements(n *Nylon) []*protocol.Advertisement {
 	entries := make([]*protocol.Advertisement, 0, len(n.RouterState.Advertised))
-	for prefix, adv := range n.RouterState.Advertised {
+	for key, adv := range n.RouterState.Advertised {
 		entries = append(entries, &protocol.Advertisement{
-			Prefix:      prefix.String(),
+			Prefix:      key.Prefix.String(),
+			Tag:         key.Tag,
 			NodeId:      string(adv.NodeId),
 			Metric:      adv.MetricFn(),
 			ExpiryUnix:  adv.Expiry.Unix(),
@@ -165,14 +166,18 @@ func buildAdvertisements(n *Nylon) []*protocol.Advertisement {
 
 func buildSeqnos(n *Nylon) []*protocol.SeqnoEntry {
 	entries := make([]*protocol.SeqnoEntry, 0, len(n.RouterState.SelfSeqno))
-	for prefix, seqno := range n.RouterState.SelfSeqno {
+	for key, seqno := range n.RouterState.SelfSeqno {
 		entries = append(entries, &protocol.SeqnoEntry{
-			Prefix: prefix.String(),
+			Prefix: key.Prefix.String(),
+			Tag:    key.Tag,
 			Seqno:  uint32(seqno),
 		})
 	}
 	slices.SortFunc(entries, func(a, b *protocol.SeqnoEntry) int {
-		return cmp.Compare(a.Prefix, b.Prefix)
+		if c := cmp.Compare(a.Prefix, b.Prefix); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Tag, b.Tag)
 	})
 	return entries
 }
@@ -255,7 +260,18 @@ func buildRouteTables(n *Nylon) *protocol.RouteTables {
 			Prefix:    prefix.String(),
 			Nh:        string(route.Nh),
 			Blackhole: route.Blackhole,
+			Tag:       route.Tag,
 		})
+	}
+	for _, tbl := range *n.router.TaggedForwardTables.Load() {
+		for prefix, route := range tbl.All() {
+			tables.Forward = append(tables.Forward, &protocol.RouteTableEntry{
+				Prefix:    prefix.String(),
+				Nh:        string(route.Nh),
+				Blackhole: route.Blackhole,
+				Tag:       route.Tag,
+			})
+		}
 	}
 	sortRouteTableEntries(tables.Forward)
 	for prefix, route := range n.router.ExitTable.Load().All() {
@@ -263,6 +279,7 @@ func buildRouteTables(n *Nylon) *protocol.RouteTables {
 			Prefix:    prefix.String(),
 			Nh:        string(route.Nh),
 			Blackhole: route.Blackhole,
+			Tag:       route.Tag,
 		})
 	}
 	sortRouteTableEntries(tables.Exit)
@@ -288,13 +305,14 @@ func buildFeasibilityDistances(n *Nylon) []*protocol.FeasibilityDistance {
 
 func advertisementsForNode(n *Nylon, id state.NodeId) []*protocol.Advertisement {
 	ads := make([]*protocol.Advertisement, 0)
-	for prefix, adv := range n.RouterState.Advertised {
+	for key, adv := range n.RouterState.Advertised {
 		if adv.NodeId != id {
 			continue
 		}
 		ads = append(ads, &protocol.Advertisement{
 			NodeId:      string(adv.NodeId),
-			Prefix:      prefix.String(),
+			Prefix:      key.Prefix.String(),
+			Tag:         key.Tag,
 			Metric:      adv.MetricFn(),
 			ExpiryUnix:  adv.Expiry.Unix(),
 			PassiveHold: adv.IsPassiveHold,
@@ -330,6 +348,7 @@ func sourceProto(source state.Source) *protocol.Source {
 	return &protocol.Source{
 		NodeId: string(source.NodeId),
 		Prefix: source.Prefix.String(),
+		Tag:    state.NormalizeRouteTag(source.Tag),
 	}
 }
 
@@ -384,6 +403,9 @@ func comparePubRoute(a, b *protocol.PubRoute) int {
 	if c := cmp.Compare(a.Source.Prefix, b.Source.Prefix); c != 0 {
 		return c
 	}
+	if c := cmp.Compare(a.Source.Tag, b.Source.Tag); c != 0 {
+		return c
+	}
 	if c := cmp.Compare(a.Source.NodeId, b.Source.NodeId); c != 0 {
 		return c
 	}
@@ -398,6 +420,9 @@ func sortAdvertisements(entries []*protocol.Advertisement) {
 		if c := cmp.Compare(a.Prefix, b.Prefix); c != 0 {
 			return c
 		}
+		if c := cmp.Compare(a.Tag, b.Tag); c != 0 {
+			return c
+		}
 		return cmp.Compare(a.NodeId, b.NodeId)
 	})
 }
@@ -405,6 +430,9 @@ func sortAdvertisements(entries []*protocol.Advertisement) {
 func sortRouteTableEntries(entries []*protocol.RouteTableEntry) {
 	slices.SortFunc(entries, func(a, b *protocol.RouteTableEntry) int {
 		if c := cmp.Compare(a.Prefix, b.Prefix); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Tag, b.Tag); c != 0 {
 			return c
 		}
 		return cmp.Compare(a.Nh, b.Nh)

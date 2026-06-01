@@ -88,8 +88,8 @@ func NewRouterEvent(eventType string, args ...any) RouterEvent {
 	return RouterEvent{Type: eventType, Args: args}
 }
 
-func AckRetract(neigh state.NodeId, prefix netip.Prefix) RouterEvent {
-	return NewRouterEvent(eventSendAckRetract, neigh, prefix)
+func AckRetract(neigh state.NodeId, key state.RouteKey) RouterEvent {
+	return NewRouterEvent(eventSendAckRetract, neigh, key)
 }
 
 func UpdateRoute(neigh state.NodeId, route state.PubRoute) RouterEvent {
@@ -108,12 +108,12 @@ func BroadcastRequestSeqno(src state.Source, seqno uint16, hopCnt uint8) RouterE
 	return NewRouterEvent(eventBroadcastSeqnoRequest, src, seqno, hopCnt)
 }
 
-func TableInsert(prefix netip.Prefix, route state.SelRoute) RouterEvent {
-	return NewRouterEvent(eventTableInsertRoute, prefix, route)
+func TableInsert(key state.RouteKey, route state.SelRoute) RouterEvent {
+	return NewRouterEvent(eventTableInsertRoute, key, route)
 }
 
-func TableDelete(prefix netip.Prefix) RouterEvent {
-	return NewRouterEvent(eventTableDeleteRoute, prefix)
+func TableDelete(key state.RouteKey) RouterEvent {
+	return NewRouterEvent(eventTableDeleteRoute, key)
 }
 
 func RouterLog(event string, desc string, args ...any) RouterEvent {
@@ -122,16 +122,16 @@ func RouterLog(event string, desc string, args ...any) RouterEvent {
 	return NewRouterEvent(eventRouterLog, eventArgs...)
 }
 
-func (h *RouterHarness) TableInsertRoute(prefix netip.Prefix, route state.SelRoute) {
-	h.tableActions = append(h.tableActions, TableInsert(prefix, route))
+func (h *RouterHarness) TableInsertRoute(key state.RouteKey, route state.SelRoute) {
+	h.tableActions = append(h.tableActions, TableInsert(key, route))
 }
 
-func (h *RouterHarness) TableDeleteRoute(prefix netip.Prefix) {
-	h.tableActions = append(h.tableActions, TableDelete(prefix))
+func (h *RouterHarness) TableDeleteRoute(key state.RouteKey) {
+	h.tableActions = append(h.tableActions, TableDelete(key))
 }
 
-func (h *RouterHarness) SendAckRetract(neigh state.NodeId, prefix netip.Prefix) {
-	h.actions = append(h.actions, AckRetract(neigh, prefix))
+func (h *RouterHarness) SendAckRetract(neigh state.NodeId, key state.RouteKey) {
+	h.actions = append(h.actions, AckRetract(neigh, key))
 }
 
 func (h *RouterHarness) SendRouteUpdate(neigh state.NodeId, advRoute state.PubRoute) {
@@ -247,7 +247,7 @@ func MakeNeighbours(ids ...state.NodeId) []*state.Neighbour {
 	for _, id := range ids {
 		neighs = append(neighs, &state.Neighbour{
 			Id:     id,
-			Routes: make(map[netip.Prefix]state.NeighRoute),
+			Routes: make(map[state.RouteKey]state.NeighRoute),
 		})
 	}
 	return neighs

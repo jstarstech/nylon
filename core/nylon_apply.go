@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"net/netip"
 	"reflect"
 	"slices"
 	"time"
@@ -47,6 +46,7 @@ func (n *Nylon) ApplyCentralConfig(cfg *state.CentralCfg) (ApplyResult, error) {
 	if err := n.SyncSystemState(); err != nil {
 		return ApplyRejected, err
 	}
+	n.resolveRouteTags()
 	ComputeRoutes(n.RouterState, n)
 
 	return ApplyApplied, nil
@@ -85,7 +85,7 @@ func (n *Nylon) reconcileRouterState(next *state.CentralCfg) error {
 		cfg := desired[id]
 		stNeigh := &state.Neighbour{
 			Id:     id,
-			Routes: make(map[netip.Prefix]state.NeighRoute),
+			Routes: make(map[state.RouteKey]state.NeighRoute),
 			Eps:    make([]state.Endpoint, 0, len(cfg.Endpoints)),
 		}
 		for _, ep := range cfg.Endpoints {
@@ -140,13 +140,13 @@ func (n *Nylon) reconcileAdvertisedPrefixes(next *state.CentralCfg) {
 	cur := n.GetRouter(n.LocalCfg.Id)
 	nextRouter := next.GetRouter(n.LocalCfg.Id)
 
-	currentLocal := make(map[netip.Prefix]state.PrefixHealthWrapper)
+	currentLocal := make(map[state.RouteKey]state.PrefixHealthWrapper)
 	for _, prefix := range cur.Prefixes {
-		currentLocal[prefix.GetPrefix()] = prefix
+		currentLocal[state.NewRouteKey(prefix.GetPrefix(), prefix.GetTag())] = prefix
 	}
-	desiredLocal := make(map[netip.Prefix]state.PrefixHealthWrapper)
+	desiredLocal := make(map[state.RouteKey]state.PrefixHealthWrapper)
 	for _, prefix := range nextRouter.Prefixes {
-		desiredLocal[prefix.GetPrefix()] = prefix
+		desiredLocal[state.NewRouteKey(prefix.GetPrefix(), prefix.GetTag())] = prefix
 	}
 
 	for prefix, adv := range n.RouterState.Advertised {

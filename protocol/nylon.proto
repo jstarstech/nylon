@@ -13,15 +13,18 @@ message Ny {
     bytes Prefix = 2;
     uint32 Seqno = 3;
     uint32 Metric = 4;
+    string Tag = 5;
   }
   message AckRetract {
     bytes Prefix = 1;
+    string Tag = 2;
   }
   message SeqnoRequest {
     string RouterId = 1;
     bytes Prefix = 2;
     uint32 Seqno = 3;
     uint32 HopCount = 4;
+    string Tag = 5;
   }
 
   message Probe {

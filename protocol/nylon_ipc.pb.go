@@ -229,6 +229,7 @@ type Source struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	Prefix        string                 `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Tag           string                 `protobuf:"bytes,3,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -273,6 +274,13 @@ func (x *Source) GetNodeId() string {
 func (x *Source) GetPrefix() string {
 	if x != nil {
 		return x.Prefix
+	}
+	return ""
+}
+
+func (x *Source) GetTag() string {
+	if x != nil {
+		return x.Tag
 	}
 	return ""
 }
@@ -508,6 +516,7 @@ type Advertisement struct {
 	Metric        uint32                 `protobuf:"varint,3,opt,name=metric,proto3" json:"metric,omitempty"`
 	ExpiryUnix    int64                  `protobuf:"varint,4,opt,name=expiry_unix,json=expiryUnix,proto3" json:"expiry_unix,omitempty"`
 	PassiveHold   bool                   `protobuf:"varint,5,opt,name=passive_hold,json=passiveHold,proto3" json:"passive_hold,omitempty"`
+	Tag           string                 `protobuf:"bytes,6,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -575,6 +584,13 @@ func (x *Advertisement) GetPassiveHold() bool {
 		return x.PassiveHold
 	}
 	return false
+}
+
+func (x *Advertisement) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
 }
 
 type EndpointInfo struct {
@@ -842,6 +858,7 @@ type RouteTableEntry struct {
 	Prefix        string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	Nh            string                 `protobuf:"bytes,2,opt,name=nh,proto3" json:"nh,omitempty"`
 	Blackhole     bool                   `protobuf:"varint,3,opt,name=blackhole,proto3" json:"blackhole,omitempty"`
+	Tag           string                 `protobuf:"bytes,4,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -895,6 +912,13 @@ func (x *RouteTableEntry) GetBlackhole() bool {
 		return x.Blackhole
 	}
 	return false
+}
+
+func (x *RouteTableEntry) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
 }
 
 type RouteTables struct {
@@ -961,6 +985,7 @@ type SeqnoEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Prefix        string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	Seqno         uint32                 `protobuf:"varint,2,opt,name=seqno,proto3" json:"seqno,omitempty"`
+	Tag           string                 `protobuf:"bytes,3,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1007,6 +1032,13 @@ func (x *SeqnoEntry) GetSeqno() uint32 {
 		return x.Seqno
 	}
 	return 0
+}
+
+func (x *SeqnoEntry) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
 }
 
 type FeasibilityDistance struct {
@@ -1768,143 +1800,83 @@ func (*IpcResponse_Trace) isIpcResponse_Response() {}
 var File_protocol_nylon_ipc_proto protoreflect.FileDescriptor
 
 const file_protocol_nylon_ipc_proto_rawDesc = "" +
-	"\n" +
-	"\x18protocol/nylon_ipc.proto\x12\x05proto\"\x0f\n" +
-	"\rStatusRequest\"'\n" +
-	"\fProbeRequest\x12\x17\n" +
-	"\apeer_id\x18\x01 \x01(\tR\x06peerId\"\x0f\n" +
-	"\rReloadRequest\"\x0e\n" +
-	"\fTraceRequest\"9\n" +
-	"\x06Source\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x16\n" +
-	"\x06prefix\x18\x02 \x01(\tR\x06prefix\"2\n" +
-	"\x02FD\x12\x14\n" +
-	"\x05seqno\x18\x01 \x01(\rR\x05seqno\x12\x16\n" +
-	"\x06metric\x18\x02 \x01(\rR\x06metric\"L\n" +
-	"\bPubRoute\x12%\n" +
-	"\x06source\x18\x01 \x01(\v2\r.proto.SourceR\x06source\x12\x19\n" +
-	"\x02fd\x18\x02 \x01(\v2\t.proto.FDR\x02fd\"`\n" +
-	"\n" +
-	"NeighRoute\x12,\n" +
-	"\tpub_route\x18\x01 \x01(\v2\x0f.proto.PubRouteR\bpubRoute\x12$\n" +
-	"\x0eexpire_at_unix\x18\x02 \x01(\x03R\fexpireAtUnix\"\x91\x01\n" +
-	"\bSelRoute\x12,\n" +
-	"\tpub_route\x18\x01 \x01(\v2\x0f.proto.PubRouteR\bpubRoute\x12\x0e\n" +
-	"\x02nh\x18\x02 \x01(\tR\x02nh\x12$\n" +
-	"\x0eexpire_at_unix\x18\x03 \x01(\x03R\fexpireAtUnix\x12!\n" +
-	"\fretracted_by\x18\x04 \x03(\tR\vretractedBy\"\x9c\x01\n" +
-	"\rAdvertisement\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x16\n" +
-	"\x06prefix\x18\x02 \x01(\tR\x06prefix\x12\x16\n" +
-	"\x06metric\x18\x03 \x01(\rR\x06metric\x12\x1f\n" +
-	"\vexpiry_unix\x18\x04 \x01(\x03R\n" +
-	"expiryUnix\x12!\n" +
-	"\fpassive_hold\x18\x05 \x01(\bR\vpassiveHold\"\xfb\x01\n" +
-	"\fEndpointInfo\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1f\n" +
-	"\bresolved\x18\x02 \x01(\tH\x00R\bresolved\x88\x01\x01\x12\x16\n" +
-	"\x06active\x18\x03 \x01(\bR\x06active\x12\x1f\n" +
-	"\vremote_init\x18\x04 \x01(\bR\n" +
-	"remoteInit\x12\x16\n" +
-	"\x06metric\x18\x05 \x01(\rR\x06metric\x12&\n" +
-	"\x0ffiltered_rtt_ns\x18\a \x01(\x03R\rfilteredRttNs\x12*\n" +
-	"\x11stabilized_rtt_ns\x18\b \x01(\x03R\x0fstabilizedRttNsB\v\n" +
-	"\t_resolved\"\xf0\x01\n" +
-	"\x12WireGuardPeerStats\x122\n" +
-	"\x15latest_handshake_unix\x18\x01 \x01(\x03R\x13latestHandshakeUnix\x12\x19\n" +
-	"\btx_bytes\x18\x02 \x01(\x04R\atxBytes\x12\x19\n" +
-	"\brx_bytes\x18\x03 \x01(\x04R\arxBytes\x12B\n" +
-	"\x1dpersistent_keepalive_interval\x18\x04 \x01(\rR\x1bpersistentKeepaliveInterval\x12\x1f\n" +
-	"\bendpoint\x18\x05 \x01(\tH\x00R\bendpoint\x88\x01\x01B\v\n" +
-	"\t_endpoint\"\xbb\x02\n" +
-	"\rNeighbourInfo\x12\x17\n" +
-	"\apeer_id\x18\x01 \x01(\tR\x06peerId\x12\x1d\n" +
-	"\n" +
-	"public_key\x18\x02 \x01(\tR\tpublicKey\x12%\n" +
-	"\x0epassive_client\x18\x03 \x01(\bR\rpassiveClient\x121\n" +
-	"\tendpoints\x18\x04 \x03(\v2\x13.proto.EndpointInfoR\tendpoints\x12)\n" +
-	"\x06routes\x18\x05 \x03(\v2\x11.proto.NeighRouteR\x06routes\x124\n" +
-	"\n" +
-	"advertised\x18\x06 \x03(\v2\x14.proto.AdvertisementR\n" +
-	"advertised\x127\n" +
-	"\twireguard\x18\a \x01(\v2\x19.proto.WireGuardPeerStatsR\twireguard\"W\n" +
-	"\x0fRouteTableEntry\x12\x16\n" +
-	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x0e\n" +
-	"\x02nh\x18\x02 \x01(\tR\x02nh\x12\x1c\n" +
-	"\tblackhole\x18\x03 \x01(\bR\tblackhole\"\x98\x01\n" +
-	"\vRouteTables\x12+\n" +
-	"\bselected\x18\x01 \x03(\v2\x0f.proto.SelRouteR\bselected\x120\n" +
-	"\aforward\x18\x02 \x03(\v2\x16.proto.RouteTableEntryR\aforward\x12*\n" +
-	"\x04exit\x18\x03 \x03(\v2\x16.proto.RouteTableEntryR\x04exit\":\n" +
-	"\n" +
-	"SeqnoEntry\x12\x16\n" +
-	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x14\n" +
-	"\x05seqno\x18\x02 \x01(\rR\x05seqno\"W\n" +
-	"\x13FeasibilityDistance\x12%\n" +
-	"\x06source\x18\x01 \x01(\v2\r.proto.SourceR\x06source\x12\x19\n" +
-	"\x02fd\x18\x02 \x01(\v2\t.proto.FDR\x02fd\"\x88\x02\n" +
-	"\tNodeStats\x12'\n" +
-	"\x0fneighbour_count\x18\x01 \x01(\x05R\x0eneighbourCount\x122\n" +
-	"\x15active_endpoint_count\x18\x02 \x01(\x05R\x13activeEndpointCount\x120\n" +
-	"\x14selected_route_count\x18\x03 \x01(\x05R\x12selectedRouteCount\x126\n" +
-	"\x17advertised_prefix_count\x18\x04 \x01(\x05R\x15advertisedPrefixCount\x12\x19\n" +
-	"\btx_bytes\x18\x05 \x01(\x04R\atxBytes\x12\x19\n" +
-	"\brx_bytes\x18\x06 \x01(\x04R\arxBytes\"\xdc\x02\n" +
-	"\n" +
-	"NodeStatus\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
-	"\tinterface\x18\x02 \x01(\tR\tinterface\x12\x1d\n" +
-	"\n" +
-	"public_key\x18\x03 \x01(\tR\tpublicKey\x12\x1f\n" +
-	"\vlisten_port\x18\x04 \x01(\rR\n" +
-	"listenPort\x12)\n" +
-	"\x10config_timestamp\x18\x05 \x01(\x03R\x0fconfigTimestamp\x12#\n" +
-	"\rtrace_enabled\x18\x06 \x01(\bR\ftraceEnabled\x124\n" +
-	"\n" +
-	"advertised\x18\a \x03(\v2\x14.proto.AdvertisementR\n" +
-	"advertised\x12)\n" +
-	"\x06seqnos\x18\b \x03(\v2\x11.proto.SeqnoEntryR\x06seqnos\x12&\n" +
-	"\x05stats\x18\t \x01(\v2\x10.proto.NodeStatsR\x05stats\"\xea\x01\n" +
-	"\x0eStatusResponse\x12%\n" +
-	"\x04node\x18\x01 \x01(\v2\x11.proto.NodeStatusR\x04node\x124\n" +
-	"\n" +
-	"neighbours\x18\x02 \x03(\v2\x14.proto.NeighbourInfoR\n" +
-	"neighbours\x12*\n" +
-	"\x06routes\x18\x03 \x01(\v2\x12.proto.RouteTablesR\x06routes\x12O\n" +
-	"\x15feasibility_distances\x18\x04 \x03(\v2\x1a.proto.FeasibilityDistanceR\x14feasibilityDistances\"_\n" +
-	"\x13EndpointProbeResult\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n" +
-	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"E\n" +
-	"\rProbeResponse\x124\n" +
-	"\aresults\x18\x01 \x03(\v2\x1a.proto.EndpointProbeResultR\aresults\"W\n" +
-	"\x0eReloadResponse\x12+\n" +
-	"\x06result\x18\x01 \x01(\x0e2\x13.proto.ReloadResultR\x06result\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\" \n" +
-	"\n" +
-	"TraceEvent\x12\x12\n" +
-	"\x04line\x18\x01 \x01(\tR\x04line\"\xd1\x01\n" +
-	"\n" +
-	"IpcRequest\x12.\n" +
-	"\x06status\x18\x01 \x01(\v2\x14.proto.StatusRequestH\x00R\x06status\x12+\n" +
-	"\x05probe\x18\x02 \x01(\v2\x13.proto.ProbeRequestH\x00R\x05probe\x12.\n" +
-	"\x06reload\x18\x03 \x01(\v2\x14.proto.ReloadRequestH\x00R\x06reload\x12+\n" +
-	"\x05trace\x18\x04 \x01(\v2\x13.proto.TraceRequestH\x00R\x05traceB\t\n" +
-	"\arequest\"\xfa\x01\n" +
-	"\vIpcResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\x12/\n" +
-	"\x06status\x18\x03 \x01(\v2\x15.proto.StatusResponseH\x00R\x06status\x12,\n" +
-	"\x05probe\x18\x04 \x01(\v2\x14.proto.ProbeResponseH\x00R\x05probe\x12/\n" +
-	"\x06reload\x18\x05 \x01(\v2\x15.proto.ReloadResponseH\x00R\x06reload\x12)\n" +
-	"\x05trace\x18\x06 \x01(\v2\x11.proto.TraceEventH\x00R\x05traceB\n" +
-	"\n" +
-	"\bresponse*I\n" +
-	"\fReloadResult\x12\b\n" +
-	"\x04NOOP\x10\x00\x12\v\n" +
-	"\aAPPLIED\x10\x01\x12\f\n" +
-	"\bREJECTED\x10\x02\x12\x14\n" +
-	"\x10RESTART_REQUIRED\x10\x03B\vZ\tprotocol/b\x06proto3"
+	"\n\x18protocol/nylon_ipc.proto\x12\x05proto\"\x0f\n\rStatusReque" +
+	"st\"'\n\fProbeRequest\x12\x17\n\apeer_id\x18\x01 \x01(\tR\x06peerId\"\x0f\n\rR" +
+	"eloadRequest\"\x0e\n\fTraceRequest\"K\n\x06Source\x12\x17\n\anode_i" +
+	"d\x18\x01 \x01(\tR\x06nodeId\x12\x16\n\x06prefix\x18\x02 \x01(\tR\x06prefix\x12\x10\n\x03tag\x18\x03" +
+	" \x01(\tR\x03tag\"2\n\x02FD\x12\x14\n\x05seqno\x18\x01 \x01(\rR\x05seqno\x12\x16\n\x06metric\x18" +
+	"\x02 \x01(\rR\x06metric\"L\n\bPubRoute\x12%\n\x06source\x18\x01 \x01(\v2\r.prot" +
+	"o.SourceR\x06source\x12\x19\n\x02fd\x18\x02 \x01(\v2\t.proto.FDR\x02fd\"`\n\nN" +
+	"eighRoute\x12,\n\tpub_route\x18\x01 \x01(\v2\x0f.proto.PubRouteR\bp" +
+	"ubRoute\x12$\n\x0eexpire_at_unix\x18\x02 \x01(\x03R\fexpireAtUnix\"\x91\x01" +
+	"\n\bSelRoute\x12,\n\tpub_route\x18\x01 \x01(\v2\x0f.proto.PubRouteR\b" +
+	"pubRoute\x12\x0e\n\x02nh\x18\x02 \x01(\tR\x02nh\x12$\n\x0eexpire_at_unix\x18\x03 \x01(\x03" +
+	"R\fexpireAtUnix\x12!\n\fretracted_by\x18\x04 \x03(\tR\vretractedB" +
+	"y\"\xae\x01\n\rAdvertisement\x12\x17\n\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x16\n\x06" +
+	"prefix\x18\x02 \x01(\tR\x06prefix\x12\x16\n\x06metric\x18\x03 \x01(\rR\x06metric\x12\x1f\n\v" +
+	"expiry_unix\x18\x04 \x01(\x03R\nexpiryUnix\x12!\n\fpassive_hold\x18\x05 " +
+	"\x01(\bR\vpassiveHold\x12\x10\n\x03tag\x18\x06 \x01(\tR\x03tag\"\xfb\x01\n\fEndpointI" +
+	"nfo\x12\x18\n\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1f\n\bresolved\x18\x02 \x01(\tH" +
+	"\x00R\bresolved\x88\x01\x01\x12\x16\n\x06active\x18\x03 \x01(\bR\x06active\x12\x1f\n\vremote" +
+	"_init\x18\x04 \x01(\bR\nremoteInit\x12\x16\n\x06metric\x18\x05 \x01(\rR\x06metric\x12" +
+	"&\n\x0ffiltered_rtt_ns\x18\a \x01(\x03R\rfilteredRttNs\x12*\n\x11stabi" +
+	"lized_rtt_ns\x18\b \x01(\x03R\x0fstabilizedRttNsB\v\n\t_resolved" +
+	"\"\xf0\x01\n\x12WireGuardPeerStats\x122\n\x15latest_handshake_unix" +
+	"\x18\x01 \x01(\x03R\x13latestHandshakeUnix\x12\x19\n\btx_bytes\x18\x02 \x01(\x04R\at" +
+	"xBytes\x12\x19\n\brx_bytes\x18\x03 \x01(\x04R\arxBytes\x12B\n\x1dpersistent_" +
+	"keepalive_interval\x18\x04 \x01(\rR\x1bpersistentKeepaliveInt" +
+	"erval\x12\x1f\n\bendpoint\x18\x05 \x01(\tH\x00R\bendpoint\x88\x01\x01B\v\n\t_endpo" +
+	"int\"\xbb\x02\n\rNeighbourInfo\x12\x17\n\apeer_id\x18\x01 \x01(\tR\x06peerId\x12\x1d" +
+	"\n\npublic_key\x18\x02 \x01(\tR\tpublicKey\x12%\n\x0epassive_client\x18" +
+	"\x03 \x01(\bR\rpassiveClient\x121\n\tendpoints\x18\x04 \x03(\v2\x13.proto." +
+	"EndpointInfoR\tendpoints\x12)\n\x06routes\x18\x05 \x03(\v2\x11.proto." +
+	"NeighRouteR\x06routes\x124\n\nadvertised\x18\x06 \x03(\v2\x14.proto.A" +
+	"dvertisementR\nadvertised\x127\n\twireguard\x18\a \x01(\v2\x19.pr" +
+	"oto.WireGuardPeerStatsR\twireguard\"i\n\x0fRouteTableE" +
+	"ntry\x12\x16\n\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x0e\n\x02nh\x18\x02 \x01(\tR\x02nh\x12\x1c\n\t" +
+	"blackhole\x18\x03 \x01(\bR\tblackhole\x12\x10\n\x03tag\x18\x04 \x01(\tR\x03tag\"\x98\x01\n\vRouteTables\x12+\n\bselected\x18\x01" +
+	" \x03(\v2\x0f.proto.SelRouteR\bselected\x120\n\aforward\x18\x02 \x03(\v" +
+	"2\x16.proto.RouteTableEntryR\aforward\x12*\n\x04exit\x18\x03 \x03(\v2" +
+	"\x16.proto.RouteTableEntryR\x04exit\"L\n\nSeqnoEntry\x12\x16\n\x06p" +
+	"refix\x18\x01 \x01(\tR\x06prefix\x12\x14\n\x05seqno\x18\x02 \x01(\rR\x05seqno\x12\x10\n\x03tag" +
+	"\x18\x03 \x01(\tR\x03tag\"W\n\x13FeasibilityDistance\x12%\n\x06source\x18\x01 \x01" +
+	"(\v2\r.proto.SourceR\x06source\x12\x19\n\x02fd\x18\x02 \x01(\v2\t.proto.FD" +
+	"R\x02fd\"\x88\x02\n\tNodeStats\x12'\n\x0fneighbour_count\x18\x01 \x01(\x05R\x0enei" +
+	"ghbourCount\x122\n\x15active_endpoint_count\x18\x02 \x01(\x05R\x13acti" +
+	"veEndpointCount\x120\n\x14selected_route_count\x18\x03 \x01(\x05R\x12s" +
+	"electedRouteCount\x126\n\x17advertised_prefix_count\x18\x04 \x01" +
+	"(\x05R\x15advertisedPrefixCount\x12\x19\n\btx_bytes\x18\x05 \x01(\x04R\atxB" +
+	"ytes\x12\x19\n\brx_bytes\x18\x06 \x01(\x04R\arxBytes\"\xdc\x02\n\nNodeStatus\x12\x17" +
+	"\n\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n\tinterface\x18\x02 \x01(\tR\tinte" +
+	"rface\x12\x1d\n\npublic_key\x18\x03 \x01(\tR\tpublicKey\x12\x1f\n\vlisten_p" +
+	"ort\x18\x04 \x01(\rR\nlistenPort\x12)\n\x10config_timestamp\x18\x05 \x01(\x03R" +
+	"\x0fconfigTimestamp\x12#\n\rtrace_enabled\x18\x06 \x01(\bR\ftraceEn" +
+	"abled\x124\n\nadvertised\x18\a \x03(\v2\x14.proto.AdvertisementR" +
+	"\nadvertised\x12)\n\x06seqnos\x18\b \x03(\v2\x11.proto.SeqnoEntryR\x06" +
+	"seqnos\x12&\n\x05stats\x18\t \x01(\v2\x10.proto.NodeStatsR\x05stats\"\xea" +
+	"\x01\n\x0eStatusResponse\x12%\n\x04node\x18\x01 \x01(\v2\x11.proto.NodeStat" +
+	"usR\x04node\x124\n\nneighbours\x18\x02 \x03(\v2\x14.proto.NeighbourIn" +
+	"foR\nneighbours\x12*\n\x06routes\x18\x03 \x01(\v2\x12.proto.RouteTabl" +
+	"esR\x06routes\x12O\n\x15feasibility_distances\x18\x04 \x03(\v2\x1a.prot" +
+	"o.FeasibilityDistanceR\x14feasibilityDistances\"_\n\x13E" +
+	"ndpointProbeResult\x12\x18\n\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n\a" +
+	"success\x18\x02 \x01(\bR\asuccess\x12\x14\n\x05error\x18\x03 \x01(\tR\x05error\"E\n\r" +
+	"ProbeResponse\x124\n\aresults\x18\x01 \x03(\v2\x1a.proto.EndpointP" +
+	"robeResultR\aresults\"W\n\x0eReloadResponse\x12+\n\x06result\x18" +
+	"\x01 \x01(\x0e2\x13.proto.ReloadResultR\x06result\x12\x18\n\amessage\x18\x02 " +
+	"\x01(\tR\amessage\" \n\nTraceEvent\x12\x12\n\x04line\x18\x01 \x01(\tR\x04line\"\xd1" +
+	"\x01\n\nIpcRequest\x12.\n\x06status\x18\x01 \x01(\v2\x14.proto.StatusRequ" +
+	"estH\x00R\x06status\x12+\n\x05probe\x18\x02 \x01(\v2\x13.proto.ProbeReques" +
+	"tH\x00R\x05probe\x12.\n\x06reload\x18\x03 \x01(\v2\x14.proto.ReloadRequest" +
+	"H\x00R\x06reload\x12+\n\x05trace\x18\x04 \x01(\v2\x13.proto.TraceRequestH\x00" +
+	"R\x05traceB\t\n\arequest\"\xfa\x01\n\vIpcResponse\x12\x0e\n\x02ok\x18\x01 \x01(\bR\x02" +
+	"ok\x12\x14\n\x05error\x18\x02 \x01(\tR\x05error\x12/\n\x06status\x18\x03 \x01(\v2\x15.proto" +
+	".StatusResponseH\x00R\x06status\x12,\n\x05probe\x18\x04 \x01(\v2\x14.proto" +
+	".ProbeResponseH\x00R\x05probe\x12/\n\x06reload\x18\x05 \x01(\v2\x15.proto." +
+	"ReloadResponseH\x00R\x06reload\x12)\n\x05trace\x18\x06 \x01(\v2\x11.proto." +
+	"TraceEventH\x00R\x05traceB\n\n\bresponse*I\n\fReloadResult\x12" +
+	"\b\n\x04NOOP\x10\x00\x12\v\n\aAPPLIED\x10\x01\x12\f\n\bREJECTED\x10\x02\x12\x14\n\x10RESTART_" +
+	"REQUIRED\x10\x03B\vZ\tprotocol/b\x06proto3"
 
 var (
 	file_protocol_nylon_ipc_proto_rawDescOnce sync.Once

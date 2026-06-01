@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 
 	"github.com/encodeous/nylon/polyamide/conn"
 	"github.com/encodeous/nylon/polyamide/device"
@@ -83,6 +84,50 @@ func (n *Nylon) InstallTC() {
 			return device.TcPass, nil
 		})
 
+		// route-tag steering: forward a tagged node's traffic onto its routing
+		// topologies in priority order. The first listed tag with a live route to
+		// the destination wins; none reachable -> drop (strict).
+		// NOTE: filters run in REVERSE install order (slices.Backward), so this is
+		// installed AFTER the main forward filter on purpose — it must run BEFORE it.
+		n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+			if packet.GetIPVersion() != 4 && packet.GetIPVersion() != 6 {
+				return device.TcPass, nil
+			}
+			src, dst := packet.GetSrc(), packet.GetDst()
+			// Unmap to normalize 4-in-6 vs 4 (same String(), different map key).
+			tags, ok := (*n.router.SrcTags.Load())[src.Unmap()]
+			if !ok {
+				return device.TcPass, nil // source not tagged -> default forwarding
+			}
+			for _, tag := range tags {
+				tbl := n.forwardTable(tag)
+				if tbl == nil {
+					continue
+				}
+				entry, found := tbl.Lookup(dst)
+				if !found || entry.Blackhole {
+					continue
+				}
+				if entry.Nh == n.LocalCfg.Id {
+					// this node is the chosen tag's exit for dst: deliver locally so
+					// the kernel handles egress/NAT, instead of mixing topologies.
+					if n.DBG_trace_tc {
+						t.Submit(fmt.Sprintf("Tag exit: %v -> %v, tag %s\n", src, dst, tag))
+					}
+					return device.TcBounce, nil
+				}
+				if entry.Peer == nil {
+					continue // next hop not resolvable yet; try the next tag
+				}
+				packet.ToPeer = entry.Peer
+				if n.DBG_trace_tc {
+					t.Submit(fmt.Sprintf("Tag fwd: %v -> %v, tag %s via %s\n", src, dst, tag, entry.Nh))
+				}
+				return device.TcForward, nil
+			}
+			return device.TcDrop, nil // strict: no listed tag can reach the destination
+		})
+
 		// handle TTL
 		n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
 			if packet.Incoming() && (packet.GetIPVersion() == 4 || packet.GetIPVersion() == 6) {
@@ -128,6 +173,42 @@ func (n *Nylon) InstallTC() {
 		}
 		return device.TcPass, nil
 	})
+}
+
+// resolveRouteTags recomputes the source-address -> ordered-tags map from the central
+// config, so the data plane can steer each node's traffic onto its routing topologies.
+func (n *Nylon) resolveRouteTags() {
+	srcTags := make(map[netip.Addr][]string)
+	for _, node := range n.CentralCfg.GetNodes() {
+		tags := normalizeRouteTags(node.RouteTags)
+		if len(tags) == 0 {
+			continue
+		}
+		for _, addr := range node.Addresses {
+			srcTags[addr.Unmap()] = tags
+		}
+	}
+	n.router.SrcTags.Store(&srcTags)
+	keys := make([]string, 0, len(srcTags))
+	for k := range srcTags {
+		keys = append(keys, k.String())
+	}
+	n.Log.Info("resolved route tags", "sources", len(srcTags), "keys", strings.Join(keys, ","))
+}
+
+// normalizeRouteTags normalizes and de-duplicates a tag list while preserving order.
+func normalizeRouteTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	seen := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		t = state.NormalizeRouteTag(t)
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	return out
 }
 
 func (n *Nylon) SendNylon(pkt *protocol.Ny, endpoint conn.Endpoint, peer *device.Peer) error {

@@ -43,7 +43,7 @@ func scanPassivePeers(n *Nylon) error {
 			if n.IsClient(*nid) {
 				// we have a passive client
 				for _, newPrefix := range ncfg.Prefixes {
-					recentlyAdvertised := n.hasRecentlyAdvertised(newPrefix.GetPrefix())
+					recentlyAdvertised := n.hasRecentlyAdvertised(state.NewRouteKey(newPrefix.GetPrefix(), newPrefix.GetTag()))
 					if recentlyUpdated || !hasOtherAdvertisers && recentlyAdvertised {
 						n.updatePassiveClient(newPrefix, *nid, !recentlyUpdated)
 					}
