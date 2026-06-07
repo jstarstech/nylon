@@ -180,6 +180,7 @@ func (n *Nylon) InitRouter() error {
 		Neighbours:     make([]*state.Neighbour, 0),
 		Advertised:     make(map[netip.Prefix]state.Advertisement),
 	}
+	n.router.Policy.Store(&state.CompiledPolicy{}) // PROTOTYPE: allow-all until config applied
 	maxTime := time.Unix(1<<63-62135596801, 999999999)
 	for _, prefix := range n.GetRouter(n.LocalCfg.Id).Prefixes {
 		n.RouterState.Advertised[prefix.GetPrefix()] = state.Advertisement{

@@ -41,6 +41,14 @@ func (n *Nylon) ApplyCentralConfig(cfg *state.CentralCfg) (ApplyResult, error) {
 	n.reconcileAdvertisedPrefixes(next)
 	n.CentralCfg = *next
 
+	// PROTOTYPE: recompile the access policy from the new config. Fail-soft:
+	// on a bad policy we keep the previous one rather than black-holing traffic.
+	if cp, err := state.CompilePolicy(next); err != nil {
+		n.Log.Error("access policy compile failed; keeping previous policy", "err", err)
+	} else {
+		n.router.Policy.Store(cp)
+	}
+
 	if err := n.SyncWireGuard(); err != nil {
 		return ApplyRejected, err
 	}

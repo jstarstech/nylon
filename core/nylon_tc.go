@@ -128,6 +128,28 @@ func (n *Nylon) InstallTC() {
 		}
 		return device.TcPass, nil
 	})
+
+	// PROTOTYPE: access-policy enforcement (Tailscale-style deny-by-default).
+	// Installed last so it runs first (filters execute in reverse install
+	// order): a denied packet is dropped before any forwarding/bouncing. Mesh
+	// control traffic (NyProtoId) and ungoverned sources pass through.
+	n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+		ver := packet.GetIPVersion()
+		if ver != 4 && ver != 6 {
+			return device.TcPass, nil
+		}
+		src, dst := packet.GetSrc(), packet.GetDst()
+		if !src.IsValid() || !dst.IsValid() {
+			return device.TcPass, nil
+		}
+		if !n.router.Policy.Load().Allows(src, dst) {
+			if n.DBG_trace_tc {
+				t.Submit(fmt.Sprintf("Policy DROP: %v -> %v\n", src, dst))
+			}
+			return device.TcDrop, nil
+		}
+		return device.TcPass, nil
+	})
 }
 
 func (n *Nylon) SendNylon(pkt *protocol.Ny, endpoint conn.Endpoint, peer *device.Peer) error {
