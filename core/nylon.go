@@ -55,7 +55,11 @@ type Nylon struct {
 		// SrcTags maps a source address to the ordered list of routing tags that
 		// the originating node's traffic should be steered through.
 		SrcTags atomic.Pointer[map[netip.Addr][]string]
-		log     *slog.Logger
+		// UnderlayAddrs is the set of all node/client mesh addresses. These form
+		// the substrate every routing topology rides on, so they always forward
+		// via the main table and are exempt from route-tag steering.
+		UnderlayAddrs atomic.Pointer[map[netip.Addr]struct{}]
+		log           *slog.Logger
 	}
 
 	// runtime/application

@@ -212,6 +212,7 @@ func (n *Nylon) InitRouter() error {
 	n.router.TaggedForwardTables.Store(&map[string]*bart.Table[RouteTableEntry]{})
 	n.router.ExitTable.Store(&bart.Table[RouteTableEntry]{})
 	n.router.SrcTags.Store(&map[netip.Addr][]string{})
+	n.router.UnderlayAddrs.Store(&map[netip.Addr]struct{}{})
 	n.RouterState = &state.RouterState{
 		RouterTunables: &n.RouterTunables,
 		Id:             n.LocalCfg.Id,

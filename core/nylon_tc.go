@@ -99,6 +99,14 @@ func (n *Nylon) InstallTC() {
 			if !ok {
 				return device.TcPass, nil // source not tagged -> default forwarding
 			}
+			// The mesh underlay (node/client addresses) is the substrate every
+			// topology rides on, so it always forwards via the main table and is
+			// exempt from tag steering. Overlay (advertised prefixes) still obeys
+			// tags. Without this, a tagged client's traffic to a mesh address
+			// matches the tag's default route and loops at the tag's exit node.
+			if _, underlay := (*n.router.UnderlayAddrs.Load())[dst.Unmap()]; underlay {
+				return device.TcPass, nil
+			}
 			for _, tag := range tags {
 				tbl := n.forwardTable(tag)
 				if tbl == nil {
@@ -179,7 +187,11 @@ func (n *Nylon) InstallTC() {
 // config, so the data plane can steer each node's traffic onto its routing topologies.
 func (n *Nylon) resolveRouteTags() {
 	srcTags := make(map[netip.Addr][]string)
+	underlay := make(map[netip.Addr]struct{})
 	for _, node := range n.CentralCfg.GetNodes() {
+		for _, addr := range node.Addresses {
+			underlay[addr.Unmap()] = struct{}{}
+		}
 		tags := normalizeRouteTags(node.RouteTags)
 		if len(tags) == 0 {
 			continue
@@ -189,6 +201,7 @@ func (n *Nylon) resolveRouteTags() {
 		}
 	}
 	n.router.SrcTags.Store(&srcTags)
+	n.router.UnderlayAddrs.Store(&underlay)
 	keys := make([]string, 0, len(srcTags))
 	for k := range srcTags {
 		keys = append(keys, k.String())
