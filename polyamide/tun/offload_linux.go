@@ -57,6 +57,11 @@ const (
 	virtioNetHdrLen = int(unsafe.Sizeof(virtioNetHdr{}))
 )
 
+var (
+	_ [VirtioNetHdrLen - virtioNetHdrLen]byte
+	_ [virtioNetHdrLen - VirtioNetHdrLen]byte
+)
+
 // tcpFlowKey represents the key for a TCP flow.
 type tcpFlowKey struct {
 	srcAddr, dstAddr [16]byte

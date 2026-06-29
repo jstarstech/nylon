@@ -53,9 +53,16 @@ func (n *Nylon) InstallTC() {
 		})
 		// forward only outgoing packets based on the routing table
 		n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+			ver := packet.GetIPVersion()
+			if ver != 4 && ver != 6 {
+				return device.TcPass, nil
+			}
 			entry, ok := n.router.ForwardTable.Load().Lookup(packet.GetDst())
 			if ok && !packet.Incoming() {
 				if entry.Blackhole {
+					return device.TcDrop, nil
+				}
+				if entry.Peer == nil {
 					return device.TcDrop, nil
 				}
 				packet.ToPeer = entry.Peer
@@ -69,9 +76,19 @@ func (n *Nylon) InstallTC() {
 	} else {
 		// forward packets based on the routing table
 		n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+			ver := packet.GetIPVersion()
+			if ver != 4 && ver != 6 {
+				return device.TcPass, nil
+			}
 			entry, ok := n.router.ForwardTable.Load().Lookup(packet.GetDst())
 			if ok {
 				if entry.Blackhole {
+					return device.TcDrop, nil
+				}
+				if entry.Peer == nil {
+					if packet.Incoming() && entry.Nh == n.LocalCfg.Id {
+						return device.TcBounce, nil
+					}
 					return device.TcDrop, nil
 				}
 				packet.ToPeer = entry.Peer
@@ -107,6 +124,9 @@ func (n *Nylon) InstallTC() {
 
 	// bounce back packets destined for the current node
 	n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
+		if !packet.Incoming() {
+			return device.TcPass, nil
+		}
 		entry, ok := n.router.ExitTable.Load().Lookup(packet.GetDst())
 		// we should only accept packets destined to us, but not our passive clients
 		if ok && entry.Nh == n.LocalCfg.Id {
