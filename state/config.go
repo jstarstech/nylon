@@ -16,6 +16,11 @@ type NodeCfg struct {
 	PubKey    NyPublicKey
 	Addresses []netip.Addr          `yaml:",omitempty"`
 	Prefixes  []PrefixHealthWrapper `yaml:",omitempty"`
+	// RouteTags steers this node's own traffic onto one or more tagged routing
+	// topologies, in priority order. For each destination, the first listed tag
+	// with a live route wins (metric-selected within that tag); if none can reach
+	// it the packet is dropped. Include "main" as a fallback to normal routing.
+	RouteTags []string `yaml:"route_tags,omitempty"`
 }
 
 // RouterCfg represents a central representation of a node that can route
@@ -379,6 +384,7 @@ func ExpandCentralConfig(cfg *CentralCfg) {
 		for _, addr := range node.Addresses {
 			advAddress := StaticPrefixHealth{
 				Prefix: AddrToPrefix(addr),
+				Tag:    DefaultRouteTag,
 				Metric: 0,
 			}
 			node.Prefixes = append([]PrefixHealthWrapper{{&advAddress}}, node.Prefixes...)
@@ -389,6 +395,7 @@ func ExpandCentralConfig(cfg *CentralCfg) {
 		for _, addr := range node.Addresses {
 			advAddress := StaticPrefixHealth{
 				Prefix: AddrToPrefix(addr),
+				Tag:    DefaultRouteTag,
 				Metric: 0,
 			}
 			node.Prefixes = append([]PrefixHealthWrapper{{&advAddress}}, node.Prefixes...)

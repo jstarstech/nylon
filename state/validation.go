@@ -103,21 +103,23 @@ func CentralConfigValidator(cfg *CentralCfg) error {
 
 	// ensure each node contains unique prefixes (anycast routing allows duplicate prefixes across nodes)
 	for _, router := range cfg.Routers {
-		routerPrefixes := make(map[netip.Prefix]struct{})
+		routerPrefixes := make(map[RouteKey]struct{})
 		for _, p := range router.Prefixes {
-			if _, ok := routerPrefixes[p.GetPrefix()]; ok {
-				return fmt.Errorf("router %s has duplicate prefix %s", router.Id, p)
+			key := NewRouteKey(p.GetPrefix(), p.GetTag())
+			if _, ok := routerPrefixes[key]; ok {
+				return fmt.Errorf("router %s has duplicate prefix %s tag %s", router.Id, p.GetPrefix(), key.Tag)
 			}
-			routerPrefixes[p.GetPrefix()] = struct{}{}
+			routerPrefixes[key] = struct{}{}
 		}
 		for _, peer := range cfg.GetPeers(router.Id) {
 			if cfg.IsClient(peer) {
 				client := cfg.GetClient(peer)
 				for _, cp := range client.Prefixes {
-					if _, ok := routerPrefixes[cp.GetPrefix()]; ok {
-						return fmt.Errorf("router %s has duplicate prefix %s (provided by client %s)", router.Id, cp, client.Id)
+					key := NewRouteKey(cp.GetPrefix(), cp.GetTag())
+					if _, ok := routerPrefixes[key]; ok {
+						return fmt.Errorf("router %s has duplicate prefix %s tag %s (provided by client %s)", router.Id, cp.GetPrefix(), key.Tag, client.Id)
 					}
-					routerPrefixes[cp.GetPrefix()] = struct{}{}
+					routerPrefixes[key] = struct{}{}
 				}
 			}
 		}
@@ -150,6 +152,9 @@ func CentralConfigValidator(cfg *CentralCfg) error {
 		if !p.GetPrefix().IsValid() {
 			return fmt.Errorf("invalid prefix %s", p.GetPrefix())
 		}
+		if err := validateRouteTag(p.GetTag()); err != nil {
+			return fmt.Errorf("invalid tag %s for prefix %s: %w", p.GetTag(), p.GetPrefix(), err)
+		}
 		switch v := p.PrefixHealth.(type) {
 		case *StaticPrefixHealth:
 			// ok
@@ -176,6 +181,16 @@ func CentralConfigValidator(cfg *CentralCfg) error {
 		}
 	}
 
+	// validate per-node route tags: every steering tag must be advertised somewhere
+	advertised := collectAdvertisedTags(cfg)
+	for _, node := range cfg.GetNodes() {
+		for _, tag := range node.RouteTags {
+			if !advertised[NormalizeRouteTag(tag)] {
+				return fmt.Errorf("node %s: route_tag %q is not advertised by any node", node.Id, NormalizeRouteTag(tag))
+			}
+		}
+	}
+
 	// ensure that passive nodes only advertise static prefixes
 	for _, client := range cfg.Clients {
 		for _, prefix := range client.Prefixes {
@@ -188,4 +203,24 @@ func CentralConfigValidator(cfg *CentralCfg) error {
 		}
 	}
 	return nil
+}
+
+// collectAdvertisedTags returns the set of route tags advertised by any node.
+func collectAdvertisedTags(cfg *CentralCfg) map[string]bool {
+	tags := map[string]bool{DefaultRouteTag: true}
+	for _, r := range cfg.Routers {
+		for _, p := range r.Prefixes {
+			tags[p.GetTag()] = true
+		}
+	}
+	for _, c := range cfg.Clients {
+		for _, p := range c.Prefixes {
+			tags[p.GetTag()] = true
+		}
+	}
+	return tags
+}
+
+func validateRouteTag(tag string) error {
+	return NameValidator(NormalizeRouteTag(tag))
 }

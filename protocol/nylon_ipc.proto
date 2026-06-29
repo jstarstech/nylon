@@ -23,6 +23,7 @@ message TraceRequest {}
 message Source {
   string node_id = 1;
   string prefix = 2;
+  string tag = 3;
 }
 
 message FD {
@@ -53,6 +54,7 @@ message Advertisement {
   uint32 metric = 3;
   int64 expiry_unix = 4;
   bool passive_hold = 5;
+  string tag = 6;
 }
 
 message EndpointInfo {
@@ -87,6 +89,7 @@ message RouteTableEntry {
   string prefix = 1;
   string nh = 2;
   bool blackhole = 3;
+  string tag = 4;
 }
 
 message RouteTables {
@@ -98,6 +101,7 @@ message RouteTables {
 message SeqnoEntry {
   string prefix = 1;
   uint32 seqno = 2;
+  string tag = 3;
 }
 
 message FeasibilityDistance {

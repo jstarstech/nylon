@@ -19,6 +19,7 @@ type RouteTableEntry struct {
 	Nh        state.NodeId
 	Peer      *device.Peer
 	Blackhole bool
+	Tag       string
 }
 
 func (n *Nylon) GetNeighIO(neigh state.NodeId) *IOPending {
@@ -27,8 +28,8 @@ func (n *Nylon) GetNeighIO(neigh state.NodeId) *IOPending {
 		nio = &IOPending{
 			SeqnoReq:   make(map[state.Source]state.Pair[uint16, uint8]),
 			SeqnoDedup: ttlcache.New[state.Source, uint16](ttlcache.WithTTL[state.Source, uint16](n.SeqnoDedupTTL), ttlcache.WithDisableTouchOnHit[state.Source, uint16]()),
-			Acks:       make(map[netip.Prefix]struct{}),
-			Updates:    make(map[netip.Prefix]*protocol.Ny_Update),
+			Acks:       make(map[state.RouteKey]struct{}),
+			Updates:    make(map[state.RouteKey]*protocol.Ny_Update),
 		}
 		n.router.IO[neigh] = nio
 	}
@@ -39,17 +40,18 @@ func (n *Nylon) GetNeighIO(neigh state.NodeId) *IOPending {
 func (n *Nylon) SendRouteUpdate(neigh state.NodeId, advRoute state.PubRoute) {
 	nio := n.GetNeighIO(neigh)
 	prefix, _ := advRoute.Prefix.MarshalBinary()
-	nio.Updates[advRoute.Prefix] = &protocol.Ny_Update{
+	nio.Updates[advRoute.Source.Key()] = &protocol.Ny_Update{
 		RouterId: string(advRoute.NodeId),
 		Prefix:   prefix,
 		Seqno:    uint32(advRoute.Seqno),
 		Metric:   advRoute.Metric,
+		Tag:      state.WireRouteTag(advRoute.Tag),
 	}
 }
 
-func (n *Nylon) SendAckRetract(neigh state.NodeId, prefix netip.Prefix) {
+func (n *Nylon) SendAckRetract(neigh state.NodeId, key state.RouteKey) {
 	nio := n.GetNeighIO(neigh)
-	nio.Acks[prefix] = struct{}{}
+	nio.Acks[key] = struct{}{}
 }
 
 func (n *Nylon) BroadcastSendRouteUpdate(advRoute state.PubRoute) {
@@ -97,52 +99,89 @@ func (n *Nylon) UpdateNeighbour(neigh state.NodeId) {
 	PushFullTable(n.RouterState, n, neigh)
 }
 
-func (n *Nylon) TableInsertRoute(prefix netip.Prefix, route state.SelRoute) {
+func (n *Nylon) TableInsertRoute(key state.RouteKey, route state.SelRoute) {
 	nh := route.Nh
-	nf := n.router.ForwardTable.Load().Clone()
+	nf := n.cloneForwardTable(key.Tag)
 	ne := n.router.ExitTable.Load().Clone()
 	if route.Metric == state.INF {
-		nf.Insert(prefix, RouteTableEntry{
+		nf.Insert(key.Prefix, RouteTableEntry{
 			Nh:        nh,
 			Blackhole: true,
+			Tag:       key.Tag,
 		})
-		ne.Delete(prefix)
-		n.router.ForwardTable.Store(nf)
+		ne.Delete(key.Prefix)
+		n.storeForwardTable(key.Tag, nf)
 		n.router.ExitTable.Store(ne)
 		return
 	}
 	peer := n.Device.LookupPeer(device.NoisePublicKey(n.GetNode(nh).PubKey))
-	nf.Insert(prefix, RouteTableEntry{
+	nf.Insert(key.Prefix, RouteTableEntry{
 		Nh:   nh,
 		Peer: peer,
+		Tag:  key.Tag,
 	})
 	if route.Nh == n.LocalCfg.Id {
-		ne.Insert(prefix, RouteTableEntry{
+		ne.Insert(key.Prefix, RouteTableEntry{
 			Nh:   nh,
 			Peer: peer,
+			Tag:  key.Tag,
 		})
 	} else {
-		ne.Delete(prefix)
+		ne.Delete(key.Prefix)
 	}
-	n.router.ForwardTable.Store(nf)
+	n.storeForwardTable(key.Tag, nf)
 	n.router.ExitTable.Store(ne)
 }
 
-func (n *Nylon) TableDeleteRoute(prefix netip.Prefix) {
-	nf := n.router.ForwardTable.Load().Clone()
+func (n *Nylon) TableDeleteRoute(key state.RouteKey) {
+	nf := n.cloneForwardTable(key.Tag)
 	ne := n.router.ExitTable.Load().Clone()
-	nf.Delete(prefix)
-	ne.Delete(prefix)
-	n.router.ForwardTable.Store(nf)
+	nf.Delete(key.Prefix)
+	ne.Delete(key.Prefix)
+	n.storeForwardTable(key.Tag, nf)
 	n.router.ExitTable.Store(ne)
+}
+
+// cloneForwardTable returns a writable clone of the forwarding table for tag (the
+// main table for the default tag, an existing or fresh tagged table otherwise).
+func (n *Nylon) cloneForwardTable(tag string) *bart.Table[RouteTableEntry] {
+	if existing := n.forwardTable(tag); existing != nil {
+		return existing.Clone()
+	}
+	return &bart.Table[RouteTableEntry]{}
+}
+
+// storeForwardTable atomically publishes tbl as the forwarding table for tag.
+func (n *Nylon) storeForwardTable(tag string, tbl *bart.Table[RouteTableEntry]) {
+	if state.NormalizeRouteTag(tag) == state.DefaultRouteTag {
+		n.router.ForwardTable.Store(tbl)
+		return
+	}
+	tag = state.NormalizeRouteTag(tag)
+	cur := *n.router.TaggedForwardTables.Load()
+	next := make(map[string]*bart.Table[RouteTableEntry], len(cur)+1)
+	for t, x := range cur {
+		next[t] = x
+	}
+	next[tag] = tbl
+	n.router.TaggedForwardTables.Store(&next)
+}
+
+// forwardTable returns the forwarding table for tag (the main table for the default
+// tag), or nil if no tagged table has been created for a non-default tag yet.
+func (n *Nylon) forwardTable(tag string) *bart.Table[RouteTableEntry] {
+	if state.NormalizeRouteTag(tag) == state.DefaultRouteTag {
+		return n.router.ForwardTable.Load()
+	}
+	return (*n.router.TaggedForwardTables.Load())[state.NormalizeRouteTag(tag)]
 }
 
 type IOPending struct {
 	// SeqnoReq values represent a pair of (seqno, hop count)
 	SeqnoReq   map[state.Source]state.Pair[uint16, uint8]
 	SeqnoDedup *ttlcache.Cache[state.Source, uint16]
-	Acks       map[netip.Prefix]struct{}
-	Updates    map[netip.Prefix]*protocol.Ny_Update
+	Acks       map[state.RouteKey]struct{}
+	Updates    map[state.RouteKey]*protocol.Ny_Update
 }
 
 func (n *Nylon) CleanupRouter() error {
@@ -169,20 +208,23 @@ func (n *Nylon) InitRouter() error {
 	n.router.log = n.Log.With("module", log.ScopeRouter)
 	n.router.log.Debug("init router")
 	n.router.IO = make(map[state.NodeId]*IOPending)
-	n.router.ForwardTable.Store(new(bart.Table[RouteTableEntry]{}))
-	n.router.ExitTable.Store(new(bart.Table[RouteTableEntry]{}))
+	n.router.ForwardTable.Store(&bart.Table[RouteTableEntry]{})
+	n.router.TaggedForwardTables.Store(&map[string]*bart.Table[RouteTableEntry]{})
+	n.router.ExitTable.Store(&bart.Table[RouteTableEntry]{})
+	n.router.SrcTags.Store(&map[netip.Addr][]string{})
+	n.router.UnderlayAddrs.Store(&map[netip.Addr]struct{}{})
 	n.RouterState = &state.RouterState{
 		RouterTunables: &n.RouterTunables,
 		Id:             n.LocalCfg.Id,
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     make([]*state.Neighbour, 0),
-		Advertised:     make(map[netip.Prefix]state.Advertisement),
+		Advertised:     make(map[state.RouteKey]state.Advertisement),
 	}
 	maxTime := time.Unix(1<<63-62135596801, 999999999)
 	for _, prefix := range n.GetRouter(n.LocalCfg.Id).Prefixes {
-		n.RouterState.Advertised[prefix.GetPrefix()] = state.Advertisement{
+		n.RouterState.Advertised[state.NewRouteKey(prefix.GetPrefix(), prefix.GetTag())] = state.Advertisement{
 			NodeId:        n.LocalCfg.Id,
 			Expiry:        maxTime,
 			IsPassiveHold: false,
@@ -211,10 +253,15 @@ func (n *Nylon) InitRouter() error {
 func (n *Nylon) ComputeSysRouteTable() []netip.Prefix {
 	prefixes := make([]netip.Prefix, 0)
 	selectedSelf := make([]netip.Prefix, 0)
-	for entry, v := range n.RouterState.Routes {
-		prefixes = append(prefixes, entry)
-		if v.Nh == n.LocalCfg.Id {
-			selectedSelf = append(selectedSelf, entry)
+	// The OS routing table only mirrors the default (main) topology. Tagged
+	// topologies are reachable solely through nylon's policy-based forwarding.
+	for key, route := range n.RouterState.Routes {
+		if key.Tag != state.DefaultRouteTag || route.Metric == state.INF {
+			continue
+		}
+		prefixes = append(prefixes, key.Prefix)
+		if route.Nh == n.LocalCfg.Id {
+			selectedSelf = append(selectedSelf, key.Prefix)
 		}
 	}
 
@@ -224,12 +271,11 @@ func (n *Nylon) ComputeSysRouteTable() []netip.Prefix {
 	excludes.RemoveSet(state.MakeSet(n.LocalCfg.UnexcludeIPs))
 	excludes.AddSet(state.MakeSet(n.LocalCfg.ExcludeIPs))
 
+	excludedSet, _ := excludes.IPSet()
 	final := netipx.IPSetBuilder{}
 	final.AddSet(state.MakeSet(prefixes))
-	res, _ := excludes.IPSet()
-	final.RemoveSet(res)
-
-	res, _ = final.IPSet()
+	final.RemoveSet(excludedSet)
+	res, _ := final.IPSet()
 	return res.Prefixes()
 }
 
@@ -237,7 +283,8 @@ func (n *Nylon) updatePassiveClient(prefix state.PrefixHealthWrapper, node state
 	// inserts an artificial route into the table
 
 	hasPassiveHold := false
-	old, ok := n.RouterState.Advertised[prefix.GetPrefix()]
+	key := state.NewRouteKey(prefix.GetPrefix(), prefix.GetTag())
+	old, ok := n.RouterState.Advertised[key]
 	if ok && old.NodeId == node {
 		hasPassiveHold = old.IsPassiveHold
 	}
@@ -245,11 +292,11 @@ func (n *Nylon) updatePassiveClient(prefix state.PrefixHealthWrapper, node state
 	if passiveHold && !hasPassiveHold {
 		// the first time we enter passive hold, we should increment the seqno to prevent other nodes from switching away from the route
 		// this reduces a lot of route flapping when the client wakes up, sends some traffic and then goes back to sleep
-		n.RouterState.SetSeqno(prefix.GetPrefix(), n.RouterState.GetSeqno(prefix.GetPrefix())+1)
+		n.RouterState.SetSeqno(key, n.RouterState.GetSeqno(key)+1)
 	}
 
 	// passive nodes may only have static prefixes, so we don't call prefix.Start()
-	n.RouterState.Advertised[prefix.GetPrefix()] = state.Advertisement{
+	n.RouterState.Advertised[key] = state.Advertisement{
 		NodeId:        node,
 		Expiry:        time.Now().Add(n.ClientKeepaliveInterval),
 		IsPassiveHold: passiveHold,
@@ -260,8 +307,8 @@ func (n *Nylon) updatePassiveClient(prefix state.PrefixHealthWrapper, node state
 	}
 }
 
-func (n *Nylon) hasRecentlyAdvertised(prefix netip.Prefix) bool {
-	adv, ok := n.RouterState.Advertised[prefix]
+func (n *Nylon) hasRecentlyAdvertised(key state.RouteKey) bool {
+	adv, ok := n.RouterState.Advertised[key]
 	if !ok {
 		return false
 	}
@@ -313,6 +360,7 @@ func (n *Nylon) routerHandleRouteUpdate(node state.NodeId, update *protocol.Ny_U
 		Source: state.Source{
 			NodeId: state.NodeId(update.RouterId),
 			Prefix: prefix,
+			Tag:    state.NormalizeRouteTag(update.Tag),
 		},
 		FD: state.FD{
 			Seqno:  uint16(update.Seqno),
@@ -334,7 +382,7 @@ func (n *Nylon) routerHandleAckRetract(neigh state.NodeId, update *protocol.Ny_A
 		!n.checkNeigh(neigh) {
 		return nil
 	}
-	HandleAckRetract(n.RouterState, n, neigh, prefix)
+	HandleAckRetract(n.RouterState, n, neigh, state.NewRouteKey(prefix, update.Tag))
 	return nil
 }
 
@@ -353,6 +401,7 @@ func (n *Nylon) routerHandleSeqnoRequest(neigh state.NodeId, pkt *protocol.Ny_Se
 	HandleSeqnoRequest(n.RouterState, n, neigh, state.Source{
 		NodeId: state.NodeId(pkt.RouterId),
 		Prefix: prefix,
+		Tag:    state.NormalizeRouteTag(pkt.Tag),
 	}, uint16(pkt.Seqno), uint8(pkt.HopCount))
 	return nil
 }
@@ -382,6 +431,7 @@ func (n *Nylon) flushIO() error {
 							Prefix:   prefixBytes,
 							Seqno:    uint32(nio.SeqnoReq[seqR].V1),
 							HopCount: uint32(nio.SeqnoReq[seqR].V2),
+							Tag:      state.WireRouteTag(seqR.Tag),
 						},
 					}}
 					if tLength != 0 && tLength+proto.Size(req) >= n.SafeMTU {
@@ -404,17 +454,18 @@ func (n *Nylon) flushIO() error {
 					tLength += proto.Size(req)
 				}
 
-				for prefix := range nio.Acks {
-					prefixBytes, _ := prefix.MarshalBinary()
+				for key := range nio.Acks {
+					prefixBytes, _ := key.Prefix.MarshalBinary()
 					req := &protocol.Ny{Type: &protocol.Ny_AckRetractOp{
 						AckRetractOp: &protocol.Ny_AckRetract{
 							Prefix: prefixBytes,
+							Tag:    state.WireRouteTag(key.Tag),
 						},
 					}}
 					if tLength != 0 && tLength+proto.Size(req) >= n.SafeMTU {
 						goto send
 					}
-					delete(nio.Acks, prefix)
+					delete(nio.Acks, key)
 					bundle.Packets = append(bundle.Packets, req)
 					tLength += proto.Size(req)
 				}

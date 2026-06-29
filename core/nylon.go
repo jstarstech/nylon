@@ -44,11 +44,22 @@ type Nylon struct {
 		LastStarvationRequest time.Time
 		IO                    map[state.NodeId]*IOPending
 
-		// ForwardTable contains the full routing table
+		// ForwardTable contains the full routing table (the default "main" topology),
+		// and drives ordinary destination-based forwarding.
 		ForwardTable atomic.Pointer[bart.Table[RouteTableEntry]]
+		// TaggedForwardTables holds one forwarding table per non-default tag; these
+		// are consulted only for traffic steered there by a node's route_tags.
+		TaggedForwardTables atomic.Pointer[map[string]*bart.Table[RouteTableEntry]]
 		// ExitTable contains only routes to services hosted on this node
 		ExitTable atomic.Pointer[bart.Table[RouteTableEntry]]
-		log       *slog.Logger
+		// SrcTags maps a source address to the ordered list of routing tags that
+		// the originating node's traffic should be steered through.
+		SrcTags atomic.Pointer[map[netip.Addr][]string]
+		// UnderlayAddrs is the set of all node/client mesh addresses. These form
+		// the substrate every routing topology rides on, so they always forward
+		// via the main table and are exempt from route-tag steering.
+		UnderlayAddrs atomic.Pointer[map[netip.Addr]struct{}]
+		log           *slog.Logger
 	}
 
 	// runtime/application
@@ -176,6 +187,9 @@ func (n *Nylon) Init() error {
 	if err != nil {
 		return err
 	}
+	// populate source -> route-tag steering map from the startup config; without
+	// this, steering only activates after a *newer* distributed config update.
+	n.resolveRouteTags()
 
 	n.PingBuf = ttlcache.New[uint64, EpPing](
 		ttlcache.WithTTL[uint64, EpPing](5*time.Second),

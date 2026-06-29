@@ -27,6 +27,10 @@ func nodeToPrefix(nodeId string) netip.Prefix {
 	return netip.MustParsePrefix(fmt.Sprintf("10.0.0.%d/32", ipByte))
 }
 
+func rk(prefix netip.Prefix) state.RouteKey {
+	return state.NewRouteKey(prefix, state.DefaultRouteTag)
+}
+
 func TestRouterBasicComputeRoutes(t *testing.T) {
 	tunables := ConfigureConstants()
 	h := &RouterHarness{}
@@ -34,18 +38,18 @@ func TestRouterBasicComputeRoutes(t *testing.T) {
 	rs := state.RouterState{
 		RouterTunables: tunables,
 		Id:             "a",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("b", "c", "d"),
-		Advertised:     map[netip.Prefix]state.Advertisement{aPrefix: {NodeId: state.NodeId("a"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(aPrefix): {NodeId: state.NodeId("a"), Expiry: maxTime}},
 	}
 	ComputeRoutes(&rs, h)
 	// we should have only routes to ourselves
 	if len(rs.Routes) != 1 {
 		t.Errorf("Expected 1 route, got %d", len(rs.Routes))
 	}
-	if _, ok := rs.Routes[aPrefix]; !ok {
+	if _, ok := rs.Routes[rk(aPrefix)]; !ok {
 		t.Errorf("Expected route to service 'a', but it was not found")
 	}
 	out := h.GetActions()
@@ -68,11 +72,11 @@ func TestRouterNet1A_BasicRetraction(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("S", "B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{aPrefix: {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(aPrefix): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	sr := AddLink(rs, NewMockEndpoint("S", 1))
@@ -164,11 +168,11 @@ func TestRouterNet2S_SolveStarvation(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "S",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("A", "B"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("S"): {NodeId: state.NodeId("S"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("S")): {NodeId: state.NodeId("S"), Expiry: maxTime}},
 	}
 
 	AS := AddLink(rs, NewMockEndpoint("A", 1))
@@ -224,7 +228,7 @@ func TestRouterNet2S_SolveStarvation(t *testing.T) {
 		},
 	}))
 	// B acknowledges the retraction
-	HandleAckRetract(rs, h, "B", nodeToPrefix("A"))
+	HandleAckRetract(rs, h, "B", rk(nodeToPrefix("A")))
 	ComputeRoutes(rs, h)
 	a = h.GetActions()
 	// check that we are indeed starved
@@ -248,7 +252,7 @@ func TestRouterNet2S_SolveStarvation(t *testing.T) {
 		},
 	}
 	a.AssertContains(t, BroadcastUpdateRoute(pr))
-	assert.Equal(t, pr, rs.Routes[nodeToPrefix("A")].PubRoute)
+	assert.Equal(t, pr, rs.Routes[rk(nodeToPrefix("A"))].PubRoute)
 }
 
 func TestRouterNet3A_HandleRetraction(t *testing.T) {
@@ -267,11 +271,11 @@ func TestRouterNet3A_HandleRetraction(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -316,18 +320,18 @@ func TestRouterNet3A_HandleRetraction(t *testing.T) {
 	// C will retract its route to B
 	h.NeighUpdate(rs, "C", "B", nodeToPrefix("B"), 0, state.INF)
 	a = h.GetActions()
-	a.AssertContains(t, AckRetract(state.NodeId("C"), nodeToPrefix("B")))
+	a.AssertContains(t, AckRetract(state.NodeId("C"), rk(nodeToPrefix("B"))))
 
 	// B will retract its route to C and D
 	h.NeighUpdate(rs, "B", "C", nodeToPrefix("C"), 0, state.INF)
 	h.NeighUpdate(rs, "B", "D", nodeToPrefix("D"), 0, state.INF)
 	ComputeRoutes(rs, h)
 	a = h.GetActions()
-	a.AssertContains(t, AckRetract(state.NodeId("B"), nodeToPrefix("C")))
-	a.AssertContains(t, AckRetract(state.NodeId("B"), nodeToPrefix("D")))
+	a.AssertContains(t, AckRetract(state.NodeId("B"), rk(nodeToPrefix("C"))))
+	a.AssertContains(t, AckRetract(state.NodeId("B"), rk(nodeToPrefix("D"))))
 
 	// D via C is feasible as C advertises D with a cost of 1, which is less than B's 2
-	assert.Equal(t, uint32(4), rs.Routes[nodeToPrefix("D")].Metric)
+	assert.Equal(t, uint32(4), rs.Routes[rk(nodeToPrefix("D"))].Metric)
 }
 
 func TestRouterNet4A_OverlappingServiceHoldLoop(t *testing.T) {
@@ -344,11 +348,11 @@ func TestRouterNet4A_OverlappingServiceHoldLoop(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("S", "B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	SA := AddLink(rs, NewMockEndpoint("S", 1))
@@ -393,13 +397,13 @@ func TestRouterNet4A_OverlappingServiceHoldLoop(t *testing.T) {
 		BroadcastUpdateRoute(MakePubRoute("D", nodeToPrefix("X"), 0, 2)),
 		BroadcastUpdateRoute(MakePubRoute("S", nodeToPrefix("S"), 0, state.INF)),
 	)
-	HandleAckRetract(rs, h, "B", nodeToPrefix("S"))
-	HandleAckRetract(rs, h, "B", nodeToPrefix("X"))
+	HandleAckRetract(rs, h, "B", rk(nodeToPrefix("S")))
+	HandleAckRetract(rs, h, "B", rk(nodeToPrefix("X")))
 	ComputeRoutes(rs, h)
 	a = h.GetActions()
 	assert.Empty(t, a, "Expect S to be held until C also sends ACK. X is now via D, so it is not held.")
-	HandleAckRetract(rs, h, "C", nodeToPrefix("S"))
-	HandleAckRetract(rs, h, "C", nodeToPrefix("X"))
+	HandleAckRetract(rs, h, "C", rk(nodeToPrefix("S")))
+	HandleAckRetract(rs, h, "C", rk(nodeToPrefix("X")))
 	ComputeRoutes(rs, h)
 	a = h.GetActions()
 	assert.Empty(t, a, "S is now fully retracted. X is already active via D.")
@@ -409,8 +413,8 @@ func TestRouterNet4A_OverlappingServiceHoldLoop(t *testing.T) {
 	ComputeRoutes(rs, h)
 	a = h.GetActions()
 	a.AssertEqual(t,
-		AckRetract("B", nodeToPrefix("X")),
-		AckRetract("B", nodeToPrefix("D")),
+		AckRetract("B", rk(nodeToPrefix("X"))),
+		AckRetract("B", rk(nodeToPrefix("D"))),
 		BroadcastUpdateRoute(MakePubRoute("D", nodeToPrefix("X"), 0, state.INF)),
 	)
 }
@@ -429,11 +433,11 @@ func TestRouterNet4A_OverlappingServiceMetricIncrease(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("S", "B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	SA := AddLink(rs, NewMockEndpoint("S", 1))
@@ -536,11 +540,11 @@ func TestRouter_SeqnoRequestNotForwardedBackToRequester(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -549,7 +553,7 @@ func TestRouter_SeqnoRequestNotForwardedBackToRequester(t *testing.T) {
 	h.NeighUpdate(rs, "C", "S", sPrefix, 0, 3)
 	h.NeighUpdate(rs, "B", "S", sPrefix, 0, 1)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, "B", string(rs.Routes[sPrefix].Nh))
+	assert.Equal(t, "B", string(rs.Routes[rk(sPrefix)].Nh))
 	assert.Equal(t, state.FD{Seqno: 0, Metric: 2}, rs.Sources[state.Source{NodeId: "S", Prefix: sPrefix}])
 	h.GetActions()
 
@@ -575,11 +579,11 @@ func TestRouterNet5A_SelectedUnfeasibleUpdate(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -655,11 +659,11 @@ func TestRouter_BackupRouteOverridesHeldRoute(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	AC := AddLink(rs, NewMockEndpoint("C", 1))
@@ -673,15 +677,15 @@ func TestRouter_BackupRouteOverridesHeldRoute(t *testing.T) {
 	ComputeRoutes(rs, h)
 
 	// Initially A prefers C via direct link
-	assert.Equal(t, "C", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(1), rs.Routes[cPrefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(1), rs.Routes[rk(cPrefix)].Metric)
 
 	// Now AC link goes down
 	RemoveLink(rs, AC)
 	ComputeRoutes(rs, h)
 
 	// A-C route should be retracted and held as INF
-	assert.Equal(t, state.INF, rs.Routes[cPrefix].Metric)
+	assert.Equal(t, state.INF, rs.Routes[rk(cPrefix)].Metric)
 
 	// A should realize it's starved and request a higher seqno
 	SolveStarvation(rs, h)
@@ -692,8 +696,8 @@ func TestRouter_BackupRouteOverridesHeldRoute(t *testing.T) {
 	ComputeRoutes(rs, h)
 
 	// A should now successfully switch to B
-	assert.Equal(t, "B", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(11), rs.Routes[cPrefix].Metric)
+	assert.Equal(t, "B", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(11), rs.Routes[rk(cPrefix)].Metric)
 }
 
 func TestRouter_RetractedByClearedWhenHeldRouteRecovers(t *testing.T) {
@@ -709,11 +713,11 @@ func TestRouter_RetractedByClearedWhenHeldRouteRecovers(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C", "D"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	AC := AddLink(rs, NewMockEndpoint("C", 1))
@@ -724,22 +728,22 @@ func TestRouter_RetractedByClearedWhenHeldRouteRecovers(t *testing.T) {
 	h.NeighUpdate(rs, "B", "C", cPrefix, 0, 10)
 	ComputeRoutes(rs, h)
 
-	assert.Equal(t, "C", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(1), rs.Routes[cPrefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(1), rs.Routes[rk(cPrefix)].Metric)
 
 	RemoveLink(rs, AC)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, state.INF, rs.Routes[cPrefix].Metric)
+	assert.Equal(t, state.INF, rs.Routes[rk(cPrefix)].Metric)
 
-	HandleAckRetract(rs, h, "B", cPrefix)
-	assert.Equal(t, []state.NodeId{"B"}, rs.Routes[cPrefix].RetractedBy)
+	HandleAckRetract(rs, h, "B", rk(cPrefix))
+	assert.Equal(t, []state.NodeId{"B"}, rs.Routes[rk(cPrefix)].RetractedBy)
 
 	h.NeighUpdate(rs, "B", "C", cPrefix, 1, 10)
 	ComputeRoutes(rs, h)
 
-	assert.Equal(t, "B", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(11), rs.Routes[cPrefix].Metric)
-	assert.Empty(t, rs.Routes[cPrefix].RetractedBy)
+	assert.Equal(t, "B", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(11), rs.Routes[rk(cPrefix)].Metric)
+	assert.Empty(t, rs.Routes[rk(cPrefix)].RetractedBy)
 }
 
 func TestRouter_AckRetractIgnoredForFiniteRoute(t *testing.T) {
@@ -750,11 +754,11 @@ func TestRouter_AckRetractIgnoredForFiniteRoute(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("C", 1))
@@ -763,11 +767,11 @@ func TestRouter_AckRetractIgnoredForFiniteRoute(t *testing.T) {
 	h.NeighUpdate(rs, "C", "C", cPrefix, 0, 0)
 	ComputeRoutes(rs, h)
 
-	assert.Equal(t, "C", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(1), rs.Routes[cPrefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(1), rs.Routes[rk(cPrefix)].Metric)
 
-	HandleAckRetract(rs, h, "B", cPrefix)
-	assert.Empty(t, rs.Routes[cPrefix].RetractedBy)
+	HandleAckRetract(rs, h, "B", rk(cPrefix))
+	assert.Empty(t, rs.Routes[rk(cPrefix)].RetractedBy)
 }
 
 func TestRouter_UnfeasibleUpdatePreferenceUsesTotalMetric(t *testing.T) {
@@ -785,11 +789,11 @@ func TestRouter_UnfeasibleUpdatePreferenceUsesTotalMetric(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	AC := AddLink(rs, NewMockEndpoint("C", 5))
@@ -798,14 +802,14 @@ func TestRouter_UnfeasibleUpdatePreferenceUsesTotalMetric(t *testing.T) {
 	h.NeighUpdate(rs, "C", "C", cPrefix, 0, 0)
 	h.NeighUpdate(rs, "B", "C", cPrefix, 0, 10)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, "C", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(10), rs.Routes[cPrefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(10), rs.Routes[rk(cPrefix)].Metric)
 	h.GetActions()
 
 	AC.metric = 20
 	ComputeRoutes(rs, h)
-	assert.Equal(t, "C", string(rs.Routes[cPrefix].Nh))
-	assert.Equal(t, uint32(25), rs.Routes[cPrefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(cPrefix)].Nh))
+	assert.Equal(t, uint32(25), rs.Routes[rk(cPrefix)].Metric)
 	h.GetActions()
 
 	h.NeighUpdate(rs, "B", "C", cPrefix, 0, 20)
@@ -831,11 +835,11 @@ func TestRouter_KeepsSelectedRouteOnEqualMetric(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -843,14 +847,14 @@ func TestRouter_KeepsSelectedRouteOnEqualMetric(t *testing.T) {
 
 	h.NeighUpdate(rs, "B", "S", sPrefix, 0, 1)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, "B", string(rs.Routes[sPrefix].Nh))
+	assert.Equal(t, "B", string(rs.Routes[rk(sPrefix)].Nh))
 	h.GetActions()
 
 	h.NeighUpdate(rs, "C", "S", sPrefix, 0, 1)
 	ComputeRoutes(rs, h)
 
-	assert.Equal(t, "B", string(rs.Routes[sPrefix].Nh))
-	assert.Equal(t, uint32(2), rs.Routes[sPrefix].Metric)
+	assert.Equal(t, "B", string(rs.Routes[rk(sPrefix)].Nh))
+	assert.Equal(t, uint32(2), rs.Routes[rk(sPrefix)].Metric)
 	assert.Empty(t, h.GetActions())
 }
 
@@ -873,11 +877,11 @@ func TestRouter_HeldRouteInstallsBlackhole(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -892,10 +896,10 @@ func TestRouter_HeldRouteInstallsBlackhole(t *testing.T) {
 	RemoveLink(rs, AC)
 	ComputeRoutes(rs, h)
 
-	assert.Equal(t, state.INF, rs.Routes[specific].Metric)
+	assert.Equal(t, state.INF, rs.Routes[rk(specific)].Metric)
 	tableActions := h.GetTableActions()
-	tableActions.AssertContains(t, TableInsert(specific, rs.Routes[specific]))
-	assert.Equal(t, state.INF, rs.Routes[specific].Metric, "held route should be installed as an exact-prefix blackhole")
+	tableActions.AssertContains(t, TableInsert(rk(specific), rs.Routes[rk(specific)]))
+	assert.Equal(t, state.INF, rs.Routes[rk(specific)].Metric, "held route should be installed as an exact-prefix blackhole")
 }
 
 func TestRouter_SelectedNeighbourUnfeasibleSourceChangeIsUnselected(t *testing.T) {
@@ -928,25 +932,25 @@ func TestRouter_SelectedNeighbourUnfeasibleSourceChangeIsUnselected(t *testing.T
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
 	h.NeighUpdate(rs, "B", oldSrc.NodeId, prefix, 0, 0)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, oldSrc, rs.Routes[prefix].Source)
+	assert.Equal(t, oldSrc, rs.Routes[rk(prefix)].Source)
 	h.GetActions()
 
 	rs.Sources[newSrc] = state.FD{Seqno: 0, Metric: 1}
 	h.NeighUpdate(rs, "B", newSrc.NodeId, prefix, 0, 5)
 	ComputeRoutes(rs, h)
 
-	assert.NotEqual(t, oldSrc, rs.GetNeighbour("B").Routes[prefix].Source)
-	assert.Equal(t, state.INF, rs.Routes[prefix].Metric)
+	assert.NotEqual(t, oldSrc, rs.GetNeighbour("B").Routes[rk(prefix)].Source)
+	assert.Equal(t, state.INF, rs.Routes[rk(prefix)].Metric)
 }
 
 func TestRouter_DoesNotSelectInactiveEndpointRoute(t *testing.T) {
@@ -968,11 +972,11 @@ func TestRouter_DoesNotSelectInactiveEndpointRoute(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	ep := NewMockEndpoint("B", 1)
@@ -982,7 +986,7 @@ func TestRouter_DoesNotSelectInactiveEndpointRoute(t *testing.T) {
 	h.NeighUpdate(rs, "B", "S", sPrefix, 0, 0)
 	ComputeRoutes(rs, h)
 
-	_, exists := rs.Routes[sPrefix]
+	_, exists := rs.Routes[rk(sPrefix)]
 	assert.False(t, exists)
 }
 
@@ -1005,11 +1009,11 @@ func TestRouter_SeqnoRequestSkipsInactiveForwardingNeighbour(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C", "D"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -1052,9 +1056,9 @@ func TestRouter_FullTableUpdateDoesNotUpdateFeasibilityForRetraction(t *testing.
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes: map[netip.Prefix]state.SelRoute{
-			prefix: {
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes: map[state.RouteKey]state.SelRoute{
+			rk(prefix): {
 				PubRoute: MakePubRoute("S", prefix, 1, state.INF),
 				Nh:       "B",
 				ExpireAt: maxTime,
@@ -1064,7 +1068,7 @@ func TestRouter_FullTableUpdateDoesNotUpdateFeasibilityForRetraction(t *testing.
 			src: {Seqno: 0, Metric: 1},
 		},
 		Neighbours: MakeNeighbours("B"),
-		Advertised: make(map[netip.Prefix]state.Advertisement),
+		Advertised: make(map[state.RouteKey]state.Advertisement),
 	}
 
 	FullTableUpdate(rs, h)
@@ -1091,15 +1095,15 @@ func TestRouter_SolveStarvationIgnoresRetractedNeighbourRoute(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        map[state.Source]state.FD{src: {Seqno: 0, Metric: 1}},
 		Neighbours:     MakeNeighbours("B"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
-	rs.GetNeighbour("B").Routes[prefix] = state.NeighRoute{
+	rs.GetNeighbour("B").Routes[rk(prefix)] = state.NeighRoute{
 		PubRoute: MakePubRoute("S", prefix, 0, state.INF),
 		ExpireAt: maxTime,
 	}
@@ -1130,9 +1134,9 @@ func TestRouter_SeqnoRequestDoesNotForwardToRetractedRoute(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes: map[netip.Prefix]state.SelRoute{
-			prefix: {
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes: map[state.RouteKey]state.SelRoute{
+			rk(prefix): {
 				PubRoute: MakePubRoute("S", prefix, 0, state.INF),
 				Nh:       "B",
 				ExpireAt: maxTime,
@@ -1140,17 +1144,17 @@ func TestRouter_SeqnoRequestDoesNotForwardToRetractedRoute(t *testing.T) {
 		},
 		Sources:    map[state.Source]state.FD{src: {Seqno: 0, Metric: 1}},
 		Neighbours: MakeNeighbours("B", "C", "D"),
-		Advertised: map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised: map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
 	_ = AddLink(rs, NewMockEndpoint("C", 1))
 	_ = AddLink(rs, NewMockEndpoint("D", 1))
-	rs.GetNeighbour("C").Routes[prefix] = state.NeighRoute{
+	rs.GetNeighbour("C").Routes[rk(prefix)] = state.NeighRoute{
 		PubRoute: MakePubRoute("S", prefix, 1, state.INF),
 		ExpireAt: maxTime,
 	}
-	rs.GetNeighbour("D").Routes[prefix] = state.NeighRoute{
+	rs.GetNeighbour("D").Routes[rk(prefix)] = state.NeighRoute{
 		PubRoute: MakePubRoute("S", prefix, 1, 1),
 		ExpireAt: maxTime,
 	}
@@ -1178,11 +1182,11 @@ func TestRouter_UnfeasibleEqualMetricUpdateDoesNotRequestSeqno(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	AC := AddLink(rs, NewMockEndpoint("C", 5))
@@ -1191,14 +1195,14 @@ func TestRouter_UnfeasibleEqualMetricUpdateDoesNotRequestSeqno(t *testing.T) {
 	h.NeighUpdate(rs, "C", "S", prefix, 0, 0)
 	h.NeighUpdate(rs, "B", "S", prefix, 0, 10)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, "C", string(rs.Routes[prefix].Nh))
-	assert.Equal(t, uint32(10), rs.Routes[prefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(prefix)].Nh))
+	assert.Equal(t, uint32(10), rs.Routes[rk(prefix)].Metric)
 	h.GetActions()
 
 	AC.metric = 20
 	ComputeRoutes(rs, h)
-	assert.Equal(t, "C", string(rs.Routes[prefix].Nh))
-	assert.Equal(t, uint32(25), rs.Routes[prefix].Metric)
+	assert.Equal(t, "C", string(rs.Routes[rk(prefix)].Nh))
+	assert.Equal(t, uint32(25), rs.Routes[rk(prefix)].Metric)
 	h.GetActions()
 
 	h.NeighUpdate(rs, "B", "S", prefix, 0, 15)
@@ -1219,21 +1223,21 @@ func TestRouter_BroadcastUsesConfiguredNeighbours(t *testing.T) {
 		RouterState: &state.RouterState{
 			RouterTunables: tunables,
 			Id:             "A",
-			SelfSeqno:      make(map[netip.Prefix]uint16),
-			Routes:         make(map[netip.Prefix]state.SelRoute),
+			SelfSeqno:      make(map[state.RouteKey]uint16),
+			Routes:         make(map[state.RouteKey]state.SelRoute),
 			Sources:        make(map[state.Source]state.FD),
 			Neighbours:     MakeNeighbours("B", "C"),
-			Advertised:     make(map[netip.Prefix]state.Advertisement),
+			Advertised:     make(map[state.RouteKey]state.Advertisement),
 		},
 	}
 	n.router.IO = make(map[state.NodeId]*IOPending)
 
 	n.BroadcastSendRouteUpdate(MakePubRoute("S", prefix, 0, 1))
 	if assert.Contains(t, n.router.IO, state.NodeId("B")) {
-		assert.Contains(t, n.router.IO["B"].Updates, prefix)
+		assert.Contains(t, n.router.IO["B"].Updates, rk(prefix))
 	}
 	if assert.Contains(t, n.router.IO, state.NodeId("C")) {
-		assert.Contains(t, n.router.IO["C"].Updates, prefix)
+		assert.Contains(t, n.router.IO["C"].Updates, rk(prefix))
 	}
 
 	n.router.IO = make(map[state.NodeId]*IOPending)
@@ -1263,11 +1267,11 @@ func TestRouter_HeldRouteDoesNotReinstallBlackholeOnNoopRecompute(t *testing.T) 
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -1279,7 +1283,7 @@ func TestRouter_HeldRouteDoesNotReinstallBlackholeOnNoopRecompute(t *testing.T) 
 
 	RemoveLink(rs, AC)
 	ComputeRoutes(rs, h)
-	assert.Equal(t, state.INF, rs.Routes[prefix].Metric)
+	assert.Equal(t, state.INF, rs.Routes[rk(prefix)].Metric)
 	h.GetActions()
 	h.GetTableActions()
 
@@ -1305,11 +1309,11 @@ func TestRouter5A_GCRoutes(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	_ = AddLink(rs, NewMockEndpoint("B", 1))
@@ -1371,11 +1375,11 @@ func TestRouterNet6A_ConvergeOptimal(t *testing.T) {
 	rs := &state.RouterState{
 		RouterTunables: tunables,
 		Id:             "A",
-		SelfSeqno:      make(map[netip.Prefix]uint16),
-		Routes:         make(map[netip.Prefix]state.SelRoute),
+		SelfSeqno:      make(map[state.RouteKey]uint16),
+		Routes:         make(map[state.RouteKey]state.SelRoute),
 		Sources:        make(map[state.Source]state.FD),
 		Neighbours:     MakeNeighbours("B", "C"),
-		Advertised:     map[netip.Prefix]state.Advertisement{nodeToPrefix("A"): {NodeId: state.NodeId("A"), Expiry: maxTime}},
+		Advertised:     map[state.RouteKey]state.Advertisement{rk(nodeToPrefix("A")): {NodeId: state.NodeId("A"), Expiry: maxTime}},
 	}
 
 	AB := AddLink(rs, NewMockEndpoint("B", 1))
