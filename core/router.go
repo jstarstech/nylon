@@ -222,6 +222,7 @@ func (n *Nylon) InitRouter() error {
 		Neighbours:     make([]*state.Neighbour, 0),
 		Advertised:     make(map[state.RouteKey]state.Advertisement),
 	}
+	n.storeAccessPolicy(&n.CentralCfg) // compile & enforce the startup policy (fail-soft to allow-all)
 	maxTime := time.Unix(1<<63-62135596801, 999999999)
 	for _, prefix := range n.GetRouter(n.LocalCfg.Id).Prefixes {
 		n.RouterState.Advertised[state.NewRouteKey(prefix.GetPrefix(), prefix.GetTag())] = state.Advertisement{

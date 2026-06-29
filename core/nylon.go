@@ -41,6 +41,11 @@ type Nylon struct {
 	PeerMap       atomic.Pointer[map[state.NyPublicKey]state.NodeId]
 
 	router struct {
+		// Policy is the compiled deny-by-default access policy (PROTOTYPE).
+		Policy atomic.Pointer[state.CompiledPolicy]
+		// PolicyDrops counts packets the access policy has dropped since boot.
+		PolicyDrops atomic.Uint64
+
 		LastStarvationRequest time.Time
 		IO                    map[state.NodeId]*IOPending
 

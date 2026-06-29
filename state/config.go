@@ -47,6 +47,8 @@ type CentralCfg struct {
 	Routers    []RouterCfg
 	Clients    []ClientCfg
 	Graph      []string
+	Groups     map[string][]NodeId `yaml:"groups,omitempty"` // PROTOTYPE: named sets of nodes/clients for access policy
+	Policy     []PolicyRule        `yaml:"policy,omitempty"` // PROTOTYPE: deny-by-default access rules
 	Timestamp  int64
 	ExcludeIPs []netip.Prefix `yaml:"exclude_ips,omitempty"` // split tunnel, default excluded ip ranges for the whole network, if empty, all advertised prefixes will be included
 }

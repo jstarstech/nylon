@@ -202,6 +202,14 @@ func CentralConfigValidator(cfg *CentralCfg) error {
 			}
 		}
 	}
+
+	// validate the access policy by compiling it here (same logic the data
+	// plane uses): surfaces unknown groups/nodes, bad CIDRs, and 'internet' as
+	// a src at the validation gate -- including `nylon verify` -- so a typo is
+	// rejected before deploy rather than failing soft into allow-all at apply.
+	if _, err := CompilePolicy(cfg); err != nil {
+		return fmt.Errorf("invalid access policy: %w", err)
+	}
 	return nil
 }
 

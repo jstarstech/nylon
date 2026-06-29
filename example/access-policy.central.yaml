@@ -1,0 +1,108 @@
+# PROTOTYPE access-policy example (feature/access-policy)
+#
+# Drop the `groups:` and `policy:` blocks below into your central.yaml. The
+# routers/clients here are illustrative — match ids/addresses to your mesh.
+#
+# Model: deny-by-default, but ONLY for "governed" sources (any id named as a
+# rule `src`). Sources never named in a rule keep working as before. So you opt
+# a client into isolation by putting it in a group a rule references; you never
+# have to enumerate what it can't reach.
+#
+# SECURITY PREREQUISITE: each WireGuard end-user peer must have AllowedIPs
+# pinned to its own /32 (cryptokey routing). That is what makes the source IP
+# trustworthy — the whole policy rests on it. Do not widen it to 0.0.0.0/0.
+
+routers:
+  - id: gw-ru                       # customer-facing gateway (end-users land here)
+    pubkey: REPLACE_WITH_PUBKEY
+    addresses: [10.100.200.5]
+  - id: exit-fi                     # internet exit / NAT egress
+    pubkey: REPLACE_WITH_PUBKEY
+    addresses: [10.100.200.1]
+    prefixes:
+      - type: static
+        prefix: 0.0.0.0/0
+        metric: 100
+  - id: infra-svc                   # internal infrastructure that must stay private
+    pubkey: REPLACE_WITH_PUBKEY
+    addresses: [10.100.200.2]
+    prefixes:
+      - type: static
+        prefix: 10.50.0.0/24        # internal services subnet behind this node
+        metric: 0
+
+clients:
+  - id: cust-alice
+    pubkey: REPLACE_WITH_PUBKEY
+    addresses: [10.100.200.119]
+  - id: cust-bob
+    pubkey: REPLACE_WITH_PUBKEY
+    addresses: [10.100.200.120]
+  - id: admin-laptop
+    pubkey: REPLACE_WITH_PUBKEY
+    addresses: [10.100.200.200]
+
+# ---------------------------------------------------------------------------
+# Recommended MINIMAL policy: isolate paying customers, leave the rest of the
+# mesh untouched. Only `customers` are governed (deny-by-default); infra and
+# admin keep their existing allow-all behaviour.
+# ---------------------------------------------------------------------------
+groups:
+  customers: [cust-alice, cust-bob]
+
+policy:
+  # Customers may reach the internet ONLY. Deny-by-default then isolates them
+  # from each other, from every infra mesh IP (10.100.200.0/24), and from the
+  # advertised 10.50.0.0/24 services subnet — all without a single deny rule.
+  - {src: [group:customers], dst: [internet]}
+
+# ---------------------------------------------------------------------------
+# OPTIONAL hardening: also lock down infra/admin (zero-trust). NOTE: naming a
+# group as a `src` makes it governed (deny-by-default), so you must then grant
+# everything it legitimately needs. Use only once you've mapped infra's flows.
+#
+# groups:
+#   customers: [cust-alice, cust-bob]
+#   infra:     [gw-ru, exit-fi, infra-svc]
+#   admins:    [admin-laptop]
+#
+# policy:
+#   - {src: [group:customers], dst: [internet]}          # customers: internet only
+#   - {src: [group:infra],     dst: [group:infra]}       # mesh control plane
+#   - {src: [group:admins],    dst: ["*"]}               # admins: full access
+#   - {src: [group:admins],    dst: [internet]}          # admins: internet too
+#   # Example service exposure (instead of the broad admin rule above):
+#   # - {src: [group:admins], dst: [10.50.0.0/24]}       # admins reach internal services
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# SELECTOR REFERENCE: every selector form the compiler accepts. The blocks
+# above use only groups + `internet`; the rest are valid too.
+#
+#   src selectors:  "*", "group:<name>", "<node-id>"
+#   dst selectors:  "*", "internet", "group:<name>", "<node-id>", "<cidr>"
+#
+# Notes:
+#   - "internet" is dst-only; using it as a src is a compile error.
+#   - Unknown ids/groups or malformed CIDRs fail CLOSED at apply time (the
+#     config is rejected) rather than silently widening access.
+#
+# policy:
+#   # Bare node-id as src and as dst (no group needed for one-off rules):
+#   - {src: [admin-laptop], dst: [infra-svc]}            # one node -> one node
+#   - {src: [cust-alice],   dst: [exit-fi]}              # one client -> one node
+#
+#   # CIDR as dst (reach an advertised/internal subnet directly):
+#   - {src: [group:admins], dst: [10.50.0.0/24]}
+#
+# ---------------------------------------------------------------------------
+# DANGER: "*" as a src makes EVERY source governed (deny-by-default applies to
+# the whole mesh at once, not just ids you named). After this you must grant
+# every legitimate flow explicitly or you will black-hole mesh/control traffic.
+# Only use once you have mapped ALL flows. Example zero-trust baseline:
+#
+# policy:
+#   - {src: ["*"],          dst: [internet]}             # everyone may egress...
+#   - {src: [group:infra],  dst: [group:infra]}          # ...infra control plane
+#   - {src: [group:admins], dst: ["*"]}                  # ...admins reach all
+# ---------------------------------------------------------------------------

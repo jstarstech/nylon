@@ -189,3 +189,22 @@ func TestCentralConfigValidator_AnycastPrefix(t *testing.T) {
 	}
 	assert.NoError(t, CentralConfigValidator(cfg))
 }
+
+func TestCentralConfigValidator_Policy(t *testing.T) {
+	// A well-formed policy passes the validation gate.
+	assert.NoError(t, CentralConfigValidator(policyTestCfg()))
+
+	// An unknown group reference is rejected here (not just at apply time),
+	// so `nylon verify` catches the typo before deploy.
+	bad := policyTestCfg()
+	bad.Policy = append(bad.Policy, PolicyRule{Src: []string{"group:customrs"}, Dst: []string{"internet"}})
+	err := CentralConfigValidator(bad)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid access policy")
+	assert.Contains(t, err.Error(), "customrs")
+
+	// 'internet' is dst-only; using it as a src must also fail validation.
+	badSrc := policyTestCfg()
+	badSrc.Policy = []PolicyRule{{Src: []string{"internet"}, Dst: []string{"*"}}}
+	assert.Error(t, CentralConfigValidator(badSrc))
+}
