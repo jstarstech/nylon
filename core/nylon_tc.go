@@ -134,22 +134,35 @@ func (n *Nylon) InstallTC() {
 	// order): a denied packet is dropped before any forwarding/bouncing. Mesh
 	// control traffic (NyProtoId) and ungoverned sources pass through.
 	n.Device.InstallFilter(func(dev *device.Device, packet *device.TCElement) (device.TCAction, error) {
-		ver := packet.GetIPVersion()
-		if ver != 4 && ver != 6 {
-			return device.TcPass, nil
-		}
-		src, dst := packet.GetSrc(), packet.GetDst()
-		if !src.IsValid() || !dst.IsValid() {
-			return device.TcPass, nil
-		}
-		if !n.router.Policy.Load().Allows(src, dst) {
-			if n.DBG_trace_tc {
-				t.Submit(fmt.Sprintf("Policy DROP: %v -> %v\n", src, dst))
-			}
-			return device.TcDrop, nil
-		}
-		return device.TcPass, nil
+		return n.enforceAccessPolicy(t, packet)
 	})
+}
+
+// enforceAccessPolicy is the data-plane access-policy filter: it drops a packet
+// whose (src, dst) the compiled policy denies. Non-IP packets, invalid
+// addresses, and ungoverned sources pass through. Split out from InstallTC so
+// it can be exercised directly in tests.
+func (n *Nylon) enforceAccessPolicy(t *NylonTrace, packet *device.TCElement) (device.TCAction, error) {
+	ver := packet.GetIPVersion()
+	if ver != 4 && ver != 6 {
+		return device.TcPass, nil
+	}
+	src, dst := packet.GetSrc(), packet.GetDst()
+	if !src.IsValid() || !dst.IsValid() {
+		return device.TcPass, nil
+	}
+	if !n.router.Policy.Load().Allows(src, dst) {
+		if n.router.PolicyDrops.Add(1) == 1 {
+			// surface enforcement once, outside the debug trace, so an
+			// operator sees deny-by-default actually dropping traffic.
+			n.Log.Warn("access policy is dropping traffic (deny-by-default active)", "src", src, "dst", dst)
+		}
+		if n.DBG_trace_tc {
+			t.Submit(fmt.Sprintf("Policy DROP: %v -> %v\n", src, dst))
+		}
+		return device.TcDrop, nil
+	}
+	return device.TcPass, nil
 }
 
 func (n *Nylon) SendNylon(pkt *protocol.Ny, endpoint conn.Endpoint, peer *device.Peer) error {

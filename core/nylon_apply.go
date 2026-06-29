@@ -41,13 +41,10 @@ func (n *Nylon) ApplyCentralConfig(cfg *state.CentralCfg) (ApplyResult, error) {
 	n.reconcileAdvertisedPrefixes(next)
 	n.CentralCfg = *next
 
-	// PROTOTYPE: recompile the access policy from the new config. Fail-soft:
-	// on a bad policy we keep the previous one rather than black-holing traffic.
-	if cp, err := state.CompilePolicy(next); err != nil {
-		n.Log.Error("access policy compile failed; keeping previous policy", "err", err)
-	} else {
-		n.router.Policy.Store(cp)
-	}
+	// Recompile the access policy from the new config. CentralConfigValidator
+	// above already rejects bad policy at the gate, so this is the happy path;
+	// storeAccessPolicy is fail-soft for defence in depth.
+	n.storeAccessPolicy(next)
 
 	if err := n.SyncWireGuard(); err != nil {
 		return ApplyRejected, err
@@ -58,6 +55,23 @@ func (n *Nylon) ApplyCentralConfig(cfg *state.CentralCfg) (ApplyResult, error) {
 	ComputeRoutes(n.RouterState, n)
 
 	return ApplyApplied, nil
+}
+
+// storeAccessPolicy compiles cfg's access policy and installs it for the data
+// plane. Fail-soft: on a compile error it keeps the existing policy, or falls
+// back to allow-all when none is set yet (startup), so a node never black-holes
+// itself over policy. CentralConfigValidator rejects bad policy at the config
+// gate, so a failure here is defensive rather than expected.
+func (n *Nylon) storeAccessPolicy(cfg *state.CentralCfg) {
+	cp, err := state.CompilePolicy(cfg)
+	if err != nil {
+		n.Log.Error("access policy compile failed; keeping previous policy", "err", err)
+		if n.router.Policy.Load() == nil {
+			n.router.Policy.Store(&state.CompiledPolicy{}) // startup: no previous -> allow-all
+		}
+		return
+	}
+	n.router.Policy.Store(cp)
 }
 
 func (n *Nylon) reconcileRouterState(next *state.CentralCfg) error {
