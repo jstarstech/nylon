@@ -114,10 +114,12 @@ func NewNylon(ccfg state.CentralCfg, ncfg state.LocalCfg, logLevel slog.Level, c
 	if ncfg.LogPath != "" {
 		err := os.MkdirAll(path.Dir(ncfg.LogPath), 0600)
 		if err != nil {
+			cancel(err)
 			return nil, err
 		}
 		f, err := os.OpenFile(ncfg.LogPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 		if err != nil {
+			cancel(err)
 			return nil, err
 		}
 		handlers = append(handlers, slog.NewTextHandler(f, &slog.HandlerOptions{Level: logLevel}))
@@ -150,6 +152,7 @@ func NewNylon(ccfg state.CentralCfg, ncfg state.LocalCfg, logLevel slog.Level, c
 
 	err := n.Init()
 	if err != nil {
+		cancel(err)
 		return nil, err
 	}
 	return n, nil
